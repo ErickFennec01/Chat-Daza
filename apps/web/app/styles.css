@@ -1,0 +1,12 @@
+:root { color-scheme: dark; --bg: #0b1010; --surface: #121a19; --border: #273432; --ink: #eaf5ee; --muted: #a3b4ac; --accent: #58e08e; }
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(circle at 88% 0%, #153628 0, transparent 28rem), var(--bg); color: var(--ink); font-family: Arial, Helvetica, sans-serif; }
+.shell { width: min(1120px, calc(100% - 40px)); margin: auto; padding: 28px 0 64px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 22px; }
+.brand { color: var(--accent); font-weight: 800; letter-spacing: .08em; } .subtitle { margin-left: 10px; color: var(--muted); }
+.badge { border: 1px solid #316144; color: #a9f5c4; background: #102419; border-radius: 100px; padding: 7px 11px; font-size: .8rem; }
+.hero { max-width: 780px; padding: 74px 0 44px; }.eyebrow { color: var(--accent); font-size: .75rem; font-weight: 700; letter-spacing: .14em; }
+h1 { font-size: clamp(2.3rem, 6vw, 4.7rem); letter-spacing: -.06em; line-height: .98; margin: 12px 0 20px; } .hero p:not(.eyebrow) { color: var(--muted); line-height: 1.7; font-size: 1.12rem; }
+.notice { border-left: 3px solid var(--accent); background: #102018; padding: 17px 19px; color: var(--muted); line-height: 1.5; }.notice strong { color: var(--ink); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 15px; margin-top: 28px; }.card { position: relative; min-height: 210px; background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--border); border-radius: 14px; padding: 26px; }.card-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 18px var(--accent); }.card h2 { margin: 22px 0 8px; font-size: 1.2rem; }.card p { color: var(--muted); line-height: 1.55; min-height: 72px; }.card button { border: 1px solid var(--border); background: transparent; border-radius: 7px; color: var(--muted); padding: 8px 11px; }
+@media (max-width: 600px) { .shell { width: min(100% - 28px, 1120px); }.topbar { align-items: flex-start; gap: 12px; flex-direction: column; }.hero { padding-top: 52px; } }

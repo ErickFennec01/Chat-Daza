@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Headers, HttpCode, NotFoundException, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
-import { AgentDecisionDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, ResolveQuestionDto, UpsertAgentDto } from './dto';
+import { AgentDecisionDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, LoginDto, ResolveQuestionDto, UpdateDocumentoDto, UpsertAgentDto } from './dto';
 import { AppService } from './platform.service';
 import { requireAdminKey, requireInternalKey, TenantGuard, TenantRequest } from './tenant.guard';
+import { AuthService } from './auth.service';
 
 type MetaPayload = {
   entry?: Array<{ changes?: Array<{ value?: { metadata?: { phone_number_id?: string }; messages?: Array<{ id?: string; from?: string; text?: { body?: string } }> } }> }>;
@@ -12,7 +13,7 @@ type RequestWithRawBody = Request & { rawBody?: Buffer };
 
 @Controller()
 export class AppController {
-  constructor(private readonly service: AppService) {}
+  constructor(private readonly service: AppService, private readonly auth: AuthService) {}
 
   @Get('healthz')
   health() { return this.service.health(); }
@@ -29,6 +30,24 @@ export class AppController {
     return this.service.createApiKey(empresaId, input);
   }
 
+  @Post('admin/empresas/:empresaId/usuarios')
+  createPanelUser(@Headers('x-daza-admin-key') key: string | undefined, @Param('empresaId') empresaId: string, @Body() input: CreateUserDto) {
+    requireAdminKey(key);
+    return this.service.createPanelUser(empresaId, input);
+  }
+
+  @Post('auth/login')
+  @HttpCode(200)
+  login(@Body() input: LoginDto) { return this.auth.login(input.email, input.senha); }
+
+  @UseGuards(TenantGuard)
+  @Get('me')
+  me(@Req() request: TenantRequest) {
+    return request.session
+      ? { usuario: request.session }
+      : { empresaId: request.empresaId, autenticacao: 'api_key' };
+  }
+
   @UseGuards(TenantGuard)
   @Get('agentes')
   listAgents(@Req() request: TenantRequest) { return this.service.listAgents(request.empresaId!); }
@@ -38,12 +57,36 @@ export class AppController {
   upsertAgent(@Req() request: TenantRequest, @Body() input: UpsertAgentDto) { return this.service.upsertAgent(request.empresaId!, input); }
 
   @UseGuards(TenantGuard)
+  @Patch('agentes/:id')
+  updateAgent(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: UpsertAgentDto) {
+    return this.service.upsertAgent(request.empresaId!, { ...input, id });
+  }
+
+  @UseGuards(TenantGuard)
+  @Delete('agentes/:id')
+  deactivateAgent(@Req() request: TenantRequest, @Param('id') id: string) {
+    return this.service.deactivateAgent(request.empresaId!, id);
+  }
+
+  @UseGuards(TenantGuard)
   @Get('conhecimento/documentos')
   listDocuments(@Req() request: TenantRequest) { return this.service.listDocuments(request.empresaId!); }
 
   @UseGuards(TenantGuard)
   @Post('conhecimento/documentos')
   createDocument(@Req() request: TenantRequest, @Body() input: CreateDocumentoDto) { return this.service.createDocument(request.empresaId!, input); }
+
+  @UseGuards(TenantGuard)
+  @Patch('conhecimento/documentos/:id')
+  updateDocument(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: UpdateDocumentoDto) {
+    return this.service.updateDocument(request.empresaId!, id, input);
+  }
+
+  @UseGuards(TenantGuard)
+  @Delete('conhecimento/documentos/:id')
+  deleteDocument(@Req() request: TenantRequest, @Param('id') id: string) {
+    return this.service.deleteDocument(request.empresaId!, id);
+  }
 
   @UseGuards(TenantGuard)
   @Get('perguntas-sem-resposta')

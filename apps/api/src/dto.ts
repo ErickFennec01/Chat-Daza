@@ -8,6 +8,18 @@ export class CreateEmpresaDto {
 
 export class CreateApiKeyDto { @IsString() @Length(2, 120) nome!: string; }
 
+export class CreateUserDto {
+  @IsString() @Length(2, 160) nome!: string;
+  @IsString() @Length(5, 320) @Matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/) email!: string;
+  @IsString() @Length(12, 160) senha!: string;
+  @IsIn(['admin', 'operador']) papel!: 'admin' | 'operador';
+}
+
+export class LoginDto {
+  @IsString() @Length(5, 320) @Matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/) email!: string;
+  @IsString() @Length(1, 160) senha!: string;
+}
+
 export class UpsertAgentDto {
   @IsOptional() @IsUUID() id?: string;
   @IsString() @Length(2, 120) nome!: string;
@@ -23,6 +35,14 @@ export class CreateDocumentoDto {
   @IsString() @Length(2, 240) titulo!: string;
   @IsString() @Length(1, 200_000) conteudo!: string;
   @IsOptional() @IsString() @Length(0, 1000) fonte?: string;
+  @IsOptional() @IsBoolean() ativo?: boolean;
+}
+
+export class UpdateDocumentoDto {
+  @IsOptional() @IsString() @Length(2, 240) titulo?: string;
+  @IsOptional() @IsString() @Length(1, 200_000) conteudo?: string;
+  @IsOptional() @IsString() @Length(0, 1000) fonte?: string;
+  @IsOptional() @IsBoolean() ativo?: boolean;
 }
 
 export class ResolveQuestionDto {

@@ -2,7 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { createHmac, randomBytes } from 'node:crypto';
 import { PoolClient } from 'pg';
 import { DatabaseService } from './database.service';
-import { CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, ResolveQuestionDto, UpsertAgentDto } from './dto';
+import { CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, ResolveQuestionDto, UpdateDocumentoDto, UpsertAgentDto } from './dto';
+import { AuthService } from './auth.service';
 
 function tokenHash(token: string): string {
   const pepper = process.env.TENANT_TOKEN_PEPPER;
@@ -12,7 +13,7 @@ function tokenHash(token: string): string {
 
 @Injectable()
 export class AppService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: DatabaseService, private readonly auth: AuthService) {}
 
   async health() {
     await this.db.query('select 1');
@@ -40,6 +41,17 @@ export class AppService {
     return { token, prefixo, aviso: 'Exiba este token somente uma vez e guarde-o em local seguro.' };
   }
 
+  async createPanelUser(empresaId: string, input: CreateUserDto) {
+    const senhaHash = await this.auth.hashPassword(input.senha);
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query(
+        'insert into atendimento.usuarios (empresa_id, nome, email, senha_hash, papel) values ($1, $2, lower($3), $4, $5) returning id, empresa_id, nome, email, papel, ativo, created_at',
+        [empresaId, input.nome.trim(), input.email.trim(), senhaHash, input.papel],
+      );
+      return result.rows[0];
+    });
+  }
+
   async listAgents(empresaId: string) {
     return this.withTenantRows(empresaId, 'select id, nome, ativo, system_prompt, modelo, temperatura, limite_resposta_tokens, limiar_confianca, versao_conhecimento, updated_at from atendimento.agentes order by nome');
   }
@@ -56,6 +68,17 @@ export class AppService {
     });
   }
 
+  async deactivateAgent(empresaId: string, id: string) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query(
+        'update atendimento.agentes set ativo=false where id=$1 and empresa_id=$2 returning id, nome, ativo, updated_at',
+        [id, empresaId],
+      );
+      if (!result.rows[0]) throw new NotFoundException('Agente não encontrado');
+      return result.rows[0];
+    });
+  }
+
   async listDocuments(empresaId: string) {
     return this.withTenantRows(empresaId, 'select id, titulo, conteudo, fonte, ativo, updated_at from atendimento.documentos order by updated_at desc');
   }
@@ -63,10 +86,29 @@ export class AppService {
   async createDocument(empresaId: string, input: CreateDocumentoDto) {
     return this.db.withTenant(empresaId, async (client) => {
       const result = await client.query(
-        'insert into atendimento.documentos (empresa_id, titulo, conteudo, fonte) values ($1, $2, $3, $4) returning id, titulo, fonte, created_at',
-        [empresaId, input.titulo.trim(), input.conteudo, input.fonte?.trim() ?? null],
+        'insert into atendimento.documentos (empresa_id, titulo, conteudo, fonte, ativo) values ($1, $2, $3, $4, $5) returning id, titulo, fonte, ativo, created_at',
+        [empresaId, input.titulo.trim(), input.conteudo, input.fonte?.trim() ?? null, input.ativo ?? true],
       );
       return result.rows[0];
+    });
+  }
+
+  async updateDocument(empresaId: string, id: string, input: UpdateDocumentoDto) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query(
+        'update atendimento.documentos set titulo=coalesce($3, titulo), conteudo=coalesce($4, conteudo), fonte=coalesce($5, fonte), ativo=coalesce($6, ativo) where id=$1 and empresa_id=$2 returning id, titulo, conteudo, fonte, ativo, updated_at',
+        [id, empresaId, input.titulo?.trim() ?? null, input.conteudo ?? null, input.fonte?.trim() ?? null, input.ativo ?? null],
+      );
+      if (!result.rows[0]) throw new NotFoundException('Documento não encontrado');
+      return result.rows[0];
+    });
+  }
+
+  async deleteDocument(empresaId: string, id: string) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query('delete from atendimento.documentos where id=$1 and empresa_id=$2 returning id', [id, empresaId]);
+      if (!result.rows[0]) throw new NotFoundException('Documento não encontrado');
+      return { removido: true };
     });
   }
 

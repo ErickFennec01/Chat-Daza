@@ -15,7 +15,8 @@ services:
     build: ./apps/web
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://127.0.0.1:8100}
+      API_INTERNAL_URL: http://api:8000
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
     ports:
       - "127.0.0.1:3100:3000"
     depends_on:

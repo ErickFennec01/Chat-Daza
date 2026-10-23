@@ -5,7 +5,9 @@
 | Chamada | Autenticação | Quem chama |
 |---|---|---|
 | Administração de tenant | `X-DAZA-Admin-Key` | operação interna DAZA |
-| Painel de uma empresa | `Authorization: Bearer daza_<prefixo>_<segredo>` | Next.js/BFF |
+| Login do painel | e-mail e senha bcrypt | Next.js/BFF |
+| Painel de uma empresa | `Authorization: Bearer <sessão JWT>` | BFF; o browser usa cookie `HttpOnly` |
+| Integração programática | `Authorization: Bearer daza_<prefixo>_<segredo>` | sistema autorizado da empresa |
 | Meta webhook | verificação Meta + assinatura HMAC | Meta Cloud API |
 | Decisão do agente | `X-DAZA-Internal-Key` | n8n privado |
 
@@ -15,11 +17,13 @@
 
 - `POST /v1/admin/empresas` — cria tenant.
 - `POST /v1/admin/empresas/{empresaId}/api-keys` — emite token exibido uma única vez.
+- `POST /v1/admin/empresas/{empresaId}/usuarios` — cria usuário humano do painel.
+- `POST /v1/auth/login` — autentica e devolve sessão assinada ao BFF.
 
 ### Painel tenant
 
-- `GET|POST|PATCH /v1/agentes`
-- `GET|POST|PATCH /v1/conhecimento/documentos`
+- `GET|POST /v1/agentes`, `PATCH|DELETE /v1/agentes/{id}`
+- `GET|POST /v1/conhecimento/documentos`, `PATCH|DELETE /v1/conhecimento/documentos/{id}`
 - `GET|PATCH /v1/perguntas-sem-resposta`
 - `GET /v1/conversas`
 - `GET /v1/metricas`

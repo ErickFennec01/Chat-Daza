@@ -8,7 +8,7 @@
 - `execucoes_agente` e `acoes_agente`: auditoria de IA.
 - `eventos_entrada`: idempotência de mensagens do provedor.
 
-## Novas entidades da migration 08
+## Novas entidades
 
 | Entidade | Finalidade |
 |---|---|
@@ -16,13 +16,15 @@
 | `canais_whatsapp` | vínculo do número Meta a um agente; token cifrado apenas no backend |
 | `perguntas_sem_resposta` | backlog de dúvidas que exigem conhecimento ou humano |
 | `api_chaves` | credenciais de acesso do painel/API do tenant, armazenadas somente como hash |
+| `usuarios` | pessoas que operam o painel, com senha bcrypt e papel `admin` ou `operador` |
 
 ## Isolamento
 
-1. O token autenticado resolve um único `empresa_id` no backend.
+1. A chave de API ou sessão assinada resolve um único `empresa_id` no backend.
 2. A API abre transação e define `app.empresa_id`.
 3. Row-level security limita tabelas da plataforma a esse valor.
-4. As funções de borda (`autenticar_api_chave` e `resolver_canal_whatsapp`) são as únicas exceções controladas, usadas antes de existir tenant na transação.
+4. As funções de borda (`autenticar_api_chave`, `autenticar_usuario` e `resolver_canal_whatsapp`) são as únicas exceções controladas, usadas antes de existir tenant na transação.
+5. O usuário não recebe token de tenant: o BFF mantém a sessão em cookie `HttpOnly`.
 
 ## Ciclo de uma dúvida
 

@@ -8,6 +8,8 @@
 4. Assinatura Meta inválida recebe `401` e não persiste evento.
 5. Decisão `escalar` cria pergunta sem resposta e muda a conversa para fila humana.
 6. Documento alterado incrementa versão do conhecimento e invalida cache correspondente.
+7. Usuário válido recebe uma sessão de oito horas; senha ou sessão inválida recebe `401`.
+8. Cookie de sessão é `HttpOnly` e nenhuma chave de banco, tenant ou sessão aparece no bundle do navegador.
 
 ## Testes do n8n
 

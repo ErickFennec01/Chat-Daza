@@ -12,6 +12,8 @@
 8. Cookie de sessão é `HttpOnly` e nenhuma chave de banco, tenant ou sessão aparece no bundle do navegador.
 9. Usuário da empresa A não lê nem assume conversa, ação de IA ou métrica da empresa B.
 10. Assumir uma conversa aberta muda seu estado para `aguardando_humano` e registra o usuário responsável.
+11. Primeiro inbound cria conversa e o segundo inbound com o mesmo `id_externo` retorna `duplicado=true` sem chamar IA.
+12. Workflow n8n passa em validação estrutural e importação descartável sem credenciais; as credenciais reais são vinculadas apenas na homologação.
 
 ## Testes do n8n
 

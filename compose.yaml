@@ -8,8 +8,10 @@ services:
     ports:
       - "127.0.0.1:8100:8000"
     networks:
-      - erp
-      - proxy
+      erp:
+        aliases:
+          - daza-atendimento-api
+      proxy: {}
 
   web:
     build: ./apps/web

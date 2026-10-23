@@ -1,0 +1,334 @@
+{
+  "name": "DAZA Atendimento — Agente WhatsApp (MVP)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "nodes": [
+    {
+      "id": "a0f87e9c-01dc-4a0a-9110-000000000001",
+      "name": "01 — Webhook interno",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "daza/atendimento/inbound",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "a0f87e9c-01dc-4a0a-9110-000000000002",
+      "name": "02 — Validar e normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        260
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const event = $json.body ?? $json;\nconst required = ['canal', 'destinatario', 'remetente', 'id_externo', 'mensagem'];\nfor (const field of required) {\n  if (typeof event[field] !== 'string' || !event[field].trim()) throw new Error(`Evento inválido: ${field} é obrigatório`);\n}\nif (event.canal !== 'whatsapp') throw new Error('Evento inválido: somente whatsapp é aceito');\nif (event.mensagem.trim().length > 8000) throw new Error('Evento inválido: mensagem excede 8000 caracteres');\nconst metadata = event.metadados ?? {};\nconst uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;\nif (!uuid.test(String(metadata.canal_id ?? '')) || !uuid.test(String(metadata.agente_id ?? ''))) throw new Error('Evento inválido: canal_id e agente_id são obrigatórios');\nconst sql = (value) => `'${String(value ?? '').replace(/'/g, \"''\")}'`;\nconst message = event.mensagem.trim();\nreturn { json: {\n  canal: 'whatsapp', destinatario: event.destinatario.trim(), remetente: event.remetente.trim(),\n  id_externo: event.id_externo.trim(), mensagem: message, metadados: metadata,\n  sqlCanal: sql('whatsapp'), sqlDestino: sql(event.destinatario.trim()), sqlRemetente: sql(event.remetente.trim()),\n  sqlIdExterno: sql(event.id_externo.trim()), sqlMensagem: sql(message), sqlMetadados: sql(JSON.stringify(metadata)),\n  sqlAgenteId: sql(metadata.agente_id)\n} };"
+      }
+    },
+    {
+      "id": "a0f87e9c-01dc-4a0a-9110-000000000003",
+      "name": "03 — Resolver, deduplicar e carregar contexto",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        550,
+        260
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with resolucao as (\n  select * from atendimento.resolver_inbound({{ $json.sqlCanal }}, {{ $json.sqlDestino }}, {{ $json.sqlRemetente }}, {{ $json.sqlIdExterno }}, {{ $json.sqlMetadados }}::jsonb)\n), entrada as (\n  select r.*, case when not r.duplicado then atendimento.registrar_mensagem_entrada(r.empresa_id, r.conversa_id, {{ $json.sqlIdExterno }}, {{ $json.sqlMensagem }}) end as mensagem_id\n  from resolucao r\n)\nselect e.*, {{ $json.sqlMensagem }} as mensagem,\n  (select jsonb_build_object('modelo', a.modelo, 'system_prompt', a.system_prompt, 'temperatura', a.temperatura, 'limite_resposta_tokens', a.limite_resposta_tokens, 'limiar_confianca', a.limiar_confianca, 'versao_conhecimento', a.versao_conhecimento)\n   from atendimento.agentes a where a.id={{ $json.sqlAgenteId }}::uuid and a.empresa_id=e.empresa_id and a.ativo) as agente,\n  atendimento.obter_memoria_agente(e.empresa_id, e.conversa_id) as memoria,\n  atendimento.buscar_conhecimento_rag(e.empresa_id, {{ $json.sqlMensagem }}) as rag_banco,\n  ('daza:atendimento:rag:v' || coalesce((select a.versao_conhecimento::text from atendimento.agentes a where a.id={{ $json.sqlAgenteId }}::uuid), '1') || ':empresa:' || e.empresa_id::text || ':q:' || md5({{ $json.sqlMensagem }})) as cache_key\nfrom entrada e;",
+        "options": {}
+      }
+    },
+    {
+      "id": "a0f87e9c-01dc-4a0a-9110-000000000004",
+      "name": "04 — Switch de sessão",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        860,
+        260
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.duplicado }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "aguardando_humano",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "agente"
+        }
+      }
+    },
+    {
+      "id": "a0f87e9c-01dc-4a0a-9110-000000000005",
+      "name": "05 — Redis: buscar RAG",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1130,
+        480
+      ],
+      "parameters": {
+        "operation": "get",
+        "propertyName": "rag_cache",
+        "key": "={{ $json.cache_key }}",
+        "keyType": "string",
+        "options": {}
+      }
+    },
+    {
+      "id": "a0f87e9c-01dc-4a0a-9110-000000000006",
+      "name": "06 — Preparar prompt e cache",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const input = $json;\nconst agent = input.agente;\nif (!agent?.modelo || !agent?.system_prompt) throw new Error('Agente ativo não encontrado para o canal');\nlet rag = ''; let ragCache = false;\ntry { const parsed = input.rag_cache ? JSON.parse(input.rag_cache) : null; rag = String(parsed?.contexto ?? ''); ragCache = Boolean(rag); } catch {}\nif (!rag) {\n  const databaseRag = input.rag_banco;\n  rag = typeof databaseRag === 'string' ? databaseRag : String(databaseRag?.contexto ?? databaseRag ?? '');\n}\nconst memory = Array.isArray(input.memoria) ? input.memoria : (Array.isArray(input.memoria?.mensagens) ? input.memoria.mensagens : []);\nconst history = memory.slice(-12).map((item) => ({ role: item.role === 'assistant' || item.direcao === 'saida' ? 'assistant' : 'user', content: String(item.content ?? item.conteudo ?? '') })).filter((item) => item.content);\nconst system = `${agent.system_prompt}\n\nREGRAS INEGOCI\u00c1VEIS:\n- Responda em português do Brasil.\n- Use somente o contexto abaixo; não invente preços, políticas, prazos ou disponibilidade.\n- Se não houver contexto suficiente, se houver risco, alteração sensível ou pedido humano, escolha escalar.\n- Retorne somente JSON válido: {\"acao\":\"responder\"|\"escalar\",\"resposta\":\"texto\",\"motivo_escalonamento\":\"texto opcional\"}.\n\nCONTEXTO RAG:\n${rag || '(nenhum contexto confiável encontrado)'}`;\nreturn { json: { ...input, rag, rag_cache: ragCache, body: { model: agent.modelo, temperature: Number(agent.temperatura ?? 0.2), max_tokens: Number(agent.limite_resposta_tokens ?? 450), messages: [{ role: 'system', content: system }, ...history, { role: 'user', content: input.mensagem }] } } };"
+      }
+    },
+    {
+      "id": "a0f87e9c-01dc-4a0a-9110-000000000007",
+      "name": "07 — Redis: guardar RAG",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        1630,
+        480
+      ],
+      "parameters": {
+        "operation": "set",
+        "key": "={{ $json.cache_key }}",
+        "value": "={{ JSON.stringify({ contexto: $json.rag }) }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 900
+      }
+    },
+    {
+      "id": "a0f87e9c-01dc-4a0a-9110-000000000008",
+      "name": "08 — OpenRouter: decisão estruturada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1880,
+        480
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($('06 — Preparar prompt e cache').first().json.body) }}",
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "a0f87e9c-01dc-4a0a-9110-000000000009",
+      "name": "09 — Validar decisão do modelo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2130,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const context = $('06 — Preparar prompt e cache').first().json;\nconst fallback = (reason) => ({ empresa_id: context.empresa_id, conversa_id: context.conversa_id, acao: 'escalar', resposta: 'Entendi. Vou encaminhar seu atendimento para uma pessoa da equipe.', motivo_escalonamento: reason, modelo: context.body.model, rag_cache: context.rag_cache });\ntry {\n  const raw = String($json.choices?.[0]?.message?.content ?? '').replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '').trim();\n  const parsed = JSON.parse(raw);\n  if (!['responder', 'escalar'].includes(parsed.acao) || typeof parsed.resposta !== 'string' || !parsed.resposta.trim()) return { json: fallback('Resposta estruturada inválida do modelo') };\n  return { json: { empresa_id: context.empresa_id, conversa_id: context.conversa_id, acao: parsed.acao, resposta: parsed.resposta.trim().slice(0, 8000), motivo_escalonamento: parsed.acao === 'escalar' ? String(parsed.motivo_escalonamento || 'Solicitação exige atendimento humano').slice(0, 2000) : undefined, modelo: context.body.model, rag_cache: context.rag_cache } };\n} catch { return { json: fallback('Falha ao interpretar a resposta do modelo') }; }"
+      }
+    },
+    {
+      "id": "a0f87e9c-01dc-4a0a-9110-000000000010",
+      "name": "10 — API DAZA: registrar e entregar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2380,
+        480
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://daza-atendimento-api:8000/v1/internal/decisoes-agente",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "01 — Webhook interno": {
+      "main": [
+        [
+          {
+            "node": "02 — Validar e normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "02 — Validar e normalizar": {
+      "main": [
+        [
+          {
+            "node": "03 — Resolver, deduplicar e carregar contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "03 — Resolver, deduplicar e carregar contexto": {
+      "main": [
+        [
+          {
+            "node": "04 — Switch de sessão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "04 — Switch de sessão": {
+      "main": [
+        [],
+        [],
+        [
+          {
+            "node": "05 — Redis: buscar RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "05 — Redis: buscar RAG": {
+      "main": [
+        [
+          {
+            "node": "06 — Preparar prompt e cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "06 — Preparar prompt e cache": {
+      "main": [
+        [
+          {
+            "node": "07 — Redis: guardar RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "07 — Redis: guardar RAG": {
+      "main": [
+        [
+          {
+            "node": "08 — OpenRouter: decisão estruturada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "08 — OpenRouter: decisão estruturada": {
+      "main": [
+        [
+          {
+            "node": "09 — Validar decisão do modelo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "09 — Validar decisão do modelo": {
+      "main": [
+        [
+          {
+            "node": "10 — API DAZA: registrar e entregar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {}
+}

@@ -1,0 +1,42 @@
+[
+  {
+    "name": "válido",
+    "input": {
+      "canal": "whatsapp",
+      "destinatario": "123456789",
+      "remetente": "5511999999999",
+      "id_externo": "wamid.valid-001",
+      "mensagem": "Qual é o horário de atendimento?",
+      "metadados": {
+        "canal_id": "11111111-1111-1111-1111-111111111111",
+        "agente_id": "22222222-2222-2222-2222-222222222222"
+      }
+    },
+    "esperado": "A normalização aceita; o PostgreSQL cria ou reaproveita a conversa e o ramo agente é escolhido."
+  },
+  {
+    "name": "inválido",
+    "input": {
+      "canal": "whatsapp",
+      "destinatario": "123456789",
+      "remetente": "5511999999999",
+      "mensagem": "Mensagem sem ID externo"
+    },
+    "esperado": "O nó 02 falha antes de tocar PostgreSQL, Redis ou OpenRouter."
+  },
+  {
+    "name": "duplicado entre execuções",
+    "input": {
+      "canal": "whatsapp",
+      "destinatario": "123456789",
+      "remetente": "5511999999999",
+      "id_externo": "wamid.valid-001",
+      "mensagem": "Qual é o horário de atendimento?",
+      "metadados": {
+        "canal_id": "11111111-1111-1111-1111-111111111111",
+        "agente_id": "22222222-2222-2222-2222-222222222222"
+      }
+    },
+    "esperado": "resolver_inbound retorna duplicado=true por restrição durável; o Switch encerra antes da IA."
+  }
+]

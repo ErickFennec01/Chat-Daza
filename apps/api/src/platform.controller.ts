@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
 import { AgentDecisionDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, UpdateDocumentoDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
 import { AppService } from './platform.service';
-import { requireAdminKey, requireInternalKey, TenantGuard, TenantRequest } from './tenant.guard';
+import { requireAdminKey, requireInternalKey, requirePanelAdmin, TenantGuard, TenantRequest } from './tenant.guard';
 import { AuthService } from './auth.service';
 
 type MetaPayload = {
@@ -54,17 +54,22 @@ export class AppController {
 
   @UseGuards(TenantGuard)
   @Post('agentes')
-  upsertAgent(@Req() request: TenantRequest, @Body() input: UpsertAgentDto) { return this.service.upsertAgent(request.empresaId!, input); }
+  upsertAgent(@Req() request: TenantRequest, @Body() input: UpsertAgentDto) {
+    requirePanelAdmin(request);
+    return this.service.upsertAgent(request.empresaId!, input);
+  }
 
   @UseGuards(TenantGuard)
   @Patch('agentes/:id')
   updateAgent(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: UpsertAgentDto) {
+    requirePanelAdmin(request);
     return this.service.upsertAgent(request.empresaId!, { ...input, id });
   }
 
   @UseGuards(TenantGuard)
   @Delete('agentes/:id')
   deactivateAgent(@Req() request: TenantRequest, @Param('id') id: string) {
+    requirePanelAdmin(request);
     return this.service.deactivateAgent(request.empresaId!, id);
   }
 
@@ -74,17 +79,22 @@ export class AppController {
 
   @UseGuards(TenantGuard)
   @Post('conhecimento/documentos')
-  createDocument(@Req() request: TenantRequest, @Body() input: CreateDocumentoDto) { return this.service.createDocument(request.empresaId!, input); }
+  createDocument(@Req() request: TenantRequest, @Body() input: CreateDocumentoDto) {
+    requirePanelAdmin(request);
+    return this.service.createDocument(request.empresaId!, input);
+  }
 
   @UseGuards(TenantGuard)
   @Patch('conhecimento/documentos/:id')
   updateDocument(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: UpdateDocumentoDto) {
+    requirePanelAdmin(request);
     return this.service.updateDocument(request.empresaId!, id, input);
   }
 
   @UseGuards(TenantGuard)
   @Delete('conhecimento/documentos/:id')
   deleteDocument(@Req() request: TenantRequest, @Param('id') id: string) {
+    requirePanelAdmin(request);
     return this.service.deleteDocument(request.empresaId!, id);
   }
 
@@ -95,6 +105,7 @@ export class AppController {
   @UseGuards(TenantGuard)
   @Patch('perguntas-sem-resposta/:id')
   resolveUnknownQuestion(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: ResolveQuestionDto) {
+    requirePanelAdmin(request);
     return this.service.resolveUnknownQuestion(request.empresaId!, id, input);
   }
 
@@ -128,18 +139,21 @@ export class AppController {
   @UseGuards(TenantGuard)
   @Post('canais/whatsapp')
   createWhatsAppChannel(@Req() request: TenantRequest, @Body() input: CreateWhatsAppChannelDto) {
+    requirePanelAdmin(request);
     return this.service.createWhatsAppChannel(request.empresaId!, input);
   }
 
   @UseGuards(TenantGuard)
   @Patch('canais/whatsapp/:id')
   updateWhatsAppChannel(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: UpdateWhatsAppChannelDto) {
+    requirePanelAdmin(request);
     return this.service.updateWhatsAppChannel(request.empresaId!, id, input);
   }
 
   @UseGuards(TenantGuard)
   @Delete('canais/whatsapp/:id')
   deactivateWhatsAppChannel(@Req() request: TenantRequest, @Param('id') id: string) {
+    requirePanelAdmin(request);
     return this.service.deactivateWhatsAppChannel(request.empresaId!, id);
   }
 

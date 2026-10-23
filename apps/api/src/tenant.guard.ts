@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
 import { DatabaseService } from './database.service';
@@ -51,5 +51,11 @@ export function requireAdminKey(received: string | undefined): void {
   const expected = process.env.DAZA_ADMIN_KEY;
   if (!expected || !received || expected.length !== received.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(received))) {
     throw new UnauthorizedException('Chave administrativa inválida');
+  }
+}
+
+export function requirePanelAdmin(request: TenantRequest): void {
+  if (!request.session || request.session.papel !== 'admin') {
+    throw new ForbiddenException('Ação disponível apenas para administradores da empresa');
   }
 }

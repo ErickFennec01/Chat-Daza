@@ -100,6 +100,9 @@ alter table atendimento.agentes enable row level security;
 alter table atendimento.canais_whatsapp enable row level security;
 alter table atendimento.perguntas_sem_resposta enable row level security;
 alter table atendimento.api_chaves enable row level security;
+alter table atendimento.documentos enable row level security;
+alter table atendimento.conversas enable row level security;
+alter table atendimento.mensagens enable row level security;
 
 drop policy if exists empresa_isolada on atendimento.agentes;
 create policy empresa_isolada on atendimento.agentes using (empresa_id = nullif(current_setting('app.empresa_id', true), '')::uuid) with check (empresa_id = nullif(current_setting('app.empresa_id', true), '')::uuid);
@@ -109,13 +112,18 @@ drop policy if exists empresa_isolada on atendimento.perguntas_sem_resposta;
 create policy empresa_isolada on atendimento.perguntas_sem_resposta using (empresa_id = nullif(current_setting('app.empresa_id', true), '')::uuid) with check (empresa_id = nullif(current_setting('app.empresa_id', true), '')::uuid);
 drop policy if exists empresa_isolada on atendimento.api_chaves;
 create policy empresa_isolada on atendimento.api_chaves using (empresa_id = nullif(current_setting('app.empresa_id', true), '')::uuid) with check (empresa_id = nullif(current_setting('app.empresa_id', true), '')::uuid);
+drop policy if exists empresa_isolada on atendimento.documentos;
+create policy empresa_isolada on atendimento.documentos using (empresa_id = nullif(current_setting('app.empresa_id', true), '')::uuid) with check (empresa_id = nullif(current_setting('app.empresa_id', true), '')::uuid);
+drop policy if exists empresa_isolada on atendimento.conversas;
+create policy empresa_isolada on atendimento.conversas using (empresa_id = nullif(current_setting('app.empresa_id', true), '')::uuid) with check (empresa_id = nullif(current_setting('app.empresa_id', true), '')::uuid);
+drop policy if exists empresa_isolada on atendimento.mensagens;
+create policy empresa_isolada on atendimento.mensagens using (empresa_id = nullif(current_setting('app.empresa_id', true), '')::uuid) with check (empresa_id = nullif(current_setting('app.empresa_id', true), '')::uuid);
 
 do $$ begin
   if exists (select 1 from pg_roles where rolname = 'daza_atendimento_app') then
     grant usage on schema atendimento to daza_atendimento_app;
     grant select, insert, update on atendimento.agentes, atendimento.canais_whatsapp, atendimento.perguntas_sem_resposta, atendimento.api_chaves, atendimento.documentos, atendimento.conversas, atendimento.mensagens to daza_atendimento_app;
-    grant execute on function atendimento.autenticar_api_chave(text, text) to daza_atendimento_app;
-    grant execute on function atendimento.resolver_canal_whatsapp(text) to daza_atendimento_app;
+    grant execute on function atendimento.autenticar_api_chave(text, text), atendimento.resolver_canal_whatsapp(text), atendimento.registrar_saida(uuid, uuid, text, text), atendimento.finalizar_conversa(uuid, uuid, text, text, text) to daza_atendimento_app;
   end if;
 end $$;
 

@@ -1,0 +1,32 @@
+name: daza-atendimento
+
+services:
+  api:
+    build: ./apps/api
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8100:8000"
+    networks:
+      - erp
+      - proxy
+
+  web:
+    build: ./apps/web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://127.0.0.1:8100}
+    ports:
+      - "127.0.0.1:3100:3000"
+    depends_on:
+      - api
+    networks:
+      - proxy
+
+networks:
+  erp:
+    name: daza-erp_erp_net
+    external: true
+  proxy:
+    name: homelab_proxy
+    external: true

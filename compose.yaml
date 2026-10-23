@@ -5,6 +5,10 @@ services:
     build: ./apps/api
     restart: unless-stopped
     env_file: .env
+    environment:
+      # A senha é carregada somente do ambiente local no momento do deploy.
+      # Ela não fica no repositório nem é exposta ao navegador.
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis-cache:6379/0
     ports:
       - "127.0.0.1:8100:8000"
     networks:

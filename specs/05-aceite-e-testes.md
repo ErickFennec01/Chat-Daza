@@ -10,6 +10,8 @@
 6. Documento alterado incrementa versão do conhecimento e invalida cache correspondente.
 7. Usuário válido recebe uma sessão de oito horas; senha ou sessão inválida recebe `401`.
 8. Cookie de sessão é `HttpOnly` e nenhuma chave de banco, tenant ou sessão aparece no bundle do navegador.
+9. Usuário da empresa A não lê nem assume conversa, ação de IA ou métrica da empresa B.
+10. Assumir uma conversa aberta muda seu estado para `aguardando_humano` e registra o usuário responsável.
 
 ## Testes do n8n
 

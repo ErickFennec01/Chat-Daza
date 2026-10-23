@@ -25,7 +25,8 @@
 - `GET|POST /v1/agentes`, `PATCH|DELETE /v1/agentes/{id}`
 - `GET|POST /v1/conhecimento/documentos`, `PATCH|DELETE /v1/conhecimento/documentos/{id}`
 - `GET|PATCH /v1/perguntas-sem-resposta`
-- `GET /v1/conversas`
+- `GET /v1/conversas`, `GET /v1/conversas/{id}`
+- `POST /v1/conversas/{id}/assumir` — atribui uma conversa aberta ao usuário da sessão e interrompe a fila automática.
 - `GET /v1/metricas`
 - `GET|POST|PATCH /v1/canais/whatsapp`
 

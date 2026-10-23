@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
-import { AgentDecisionDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, LoginDto, ResolveQuestionDto, UpdateDocumentoDto, UpsertAgentDto } from './dto';
+import { AgentDecisionDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, UpdateDocumentoDto, UpsertAgentDto } from './dto';
 import { AppService } from './platform.service';
 import { requireAdminKey, requireInternalKey, TenantGuard, TenantRequest } from './tenant.guard';
 import { AuthService } from './auth.service';
@@ -97,6 +97,29 @@ export class AppController {
   resolveUnknownQuestion(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: ResolveQuestionDto) {
     return this.service.resolveUnknownQuestion(request.empresaId!, id, input);
   }
+
+  @UseGuards(TenantGuard)
+  @Get('conversas')
+  listConversations(@Req() request: TenantRequest, @Query() query: ListConversationsQueryDto) {
+    return this.service.listConversations(request.empresaId!, query);
+  }
+
+  @UseGuards(TenantGuard)
+  @Get('conversas/:id')
+  getConversation(@Req() request: TenantRequest, @Param('id') id: string) {
+    return this.service.getConversation(request.empresaId!, id);
+  }
+
+  @UseGuards(TenantGuard)
+  @Post('conversas/:id/assumir')
+  assumeConversation(@Req() request: TenantRequest, @Param('id') id: string) {
+    if (!request.session) throw new UnauthorizedException('Ação disponível apenas para usuários do painel');
+    return this.service.assumeConversation(request.empresaId!, id, request.session.usuarioId);
+  }
+
+  @UseGuards(TenantGuard)
+  @Get('metricas')
+  metrics(@Req() request: TenantRequest) { return this.service.metrics(request.empresaId!); }
 
   @Get('webhooks/meta/whatsapp')
   verifyMetaWebhook(@Query() query: Record<string, string>) {

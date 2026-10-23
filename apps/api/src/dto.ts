@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
 
 export class CreateEmpresaDto {
@@ -58,4 +59,9 @@ export class AgentDecisionDto {
   @IsOptional() @IsString() @Length(1, 2000) motivoEscalonamento?: string;
   @IsString() @Length(3, 160) modelo!: string;
   @IsOptional() ragCache?: boolean;
+}
+
+export class ListConversationsQueryDto {
+  @IsOptional() @IsIn(['aberta', 'aguardando_humano', 'resolvida', 'encerrada']) status?: string;
+  @IsOptional() @Type(() => Number) @Min(1) @Max(100) limit?: number;
 }

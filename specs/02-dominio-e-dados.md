@@ -18,6 +18,15 @@
 | `api_chaves` | credenciais de acesso do painel/API do tenant, armazenadas somente como hash |
 | `usuarios` | pessoas que operam o painel, com senha bcrypt e papel `admin` ou `operador` |
 
+## Operação humana e métricas
+
+- `conversas.atendida_por_usuario_id` registra quem assumiu uma fila humana;
+  não cria uma tabela paralela de atendimento.
+- `execucoes_agente`, `acoes_agente` e `eventos_entrada` também usam RLS por
+  `empresa_id`, inclusive quando são consultados em métricas.
+- Métricas são agregadas no PostgreSQL e retornadas somente para o tenant da
+  sessão. Não há telemetria de outra empresa no navegador.
+
 ## Isolamento
 
 1. A chave de API ou sessão assinada resolve um único `empresa_id` no backend.

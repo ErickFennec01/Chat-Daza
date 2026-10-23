@@ -4,6 +4,7 @@ import { PoolClient } from 'pg';
 import { DatabaseService } from './database.service';
 import { CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, ResolveQuestionDto, UpdateDocumentoDto, UpsertAgentDto } from './dto';
 import { AuthService } from './auth.service';
+import { ListConversationsQueryDto } from './dto';
 
 function tokenHash(token: string): string {
   const pepper = process.env.TENANT_TOKEN_PEPPER;
@@ -114,6 +115,73 @@ export class AppService {
 
   async listUnknownQuestions(empresaId: string) {
     return this.withTenantRows(empresaId, 'select id, conversa_id, pergunta, motivo, status, resposta_curada, created_at from atendimento.perguntas_sem_resposta order by created_at desc');
+  }
+
+  async listConversations(empresaId: string, query: ListConversationsQueryDto) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query(
+        `select c.id, c.canal, c.contato_externo, c.status, c.created_at, c.updated_at, c.assumida_em,
+                c.atendida_por_usuario_id,
+                ultima.conteudo as ultima_mensagem, ultima.direcao as ultima_mensagem_direcao, ultima.created_at as ultima_mensagem_em
+           from atendimento.conversas c
+           left join lateral (
+             select conteudo, direcao, created_at from atendimento.mensagens
+             where conversa_id = c.id order by created_at desc limit 1
+           ) ultima on true
+          where c.empresa_id = $1 and ($2::text is null or c.status = $2)
+          order by c.updated_at desc limit $3`,
+        [empresaId, query.status ?? null, query.limit ?? 30],
+      );
+      return result.rows;
+    });
+  }
+
+  async getConversation(empresaId: string, conversationId: string) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const conversation = await client.query(
+        `select c.id, c.canal, c.contato_externo, c.status, c.created_at, c.updated_at, c.assumida_em,
+                c.resumo_final, c.codigo_resolucao, c.atendida_por_usuario_id
+           from atendimento.conversas c
+          where c.id = $1 and c.empresa_id = $2`,
+        [conversationId, empresaId],
+      );
+      if (!conversation.rows[0]) throw new NotFoundException('Conversa não encontrada');
+      const messages = await client.query(
+        'select id, direcao, conteudo, modelo, status, created_at from atendimento.mensagens where conversa_id=$1 and empresa_id=$2 order by created_at asc',
+        [conversationId, empresaId],
+      );
+      return { ...conversation.rows[0], mensagens: messages.rows };
+    });
+  }
+
+  async assumeConversation(empresaId: string, conversationId: string, usuarioId: string) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query(
+        `update atendimento.conversas
+            set atendida_por_usuario_id=$3, assumida_em=coalesce(assumida_em, now()), status='aguardando_humano', updated_at=now()
+          where id=$1 and empresa_id=$2 and status in ('aberta', 'aguardando_humano')
+          returning id, status, atendida_por_usuario_id, assumida_em`,
+        [conversationId, empresaId, usuarioId],
+      );
+      if (!result.rows[0]) throw new NotFoundException('Conversa não encontrada ou já finalizada');
+      return result.rows[0];
+    });
+  }
+
+  async metrics(empresaId: string) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query(
+        `select
+           (select count(*)::int from atendimento.conversas where empresa_id=$1 and status in ('aberta', 'aguardando_humano')) as conversas_ativas,
+           (select count(*)::int from atendimento.conversas where empresa_id=$1 and status='aguardando_humano') as aguardando_humano,
+           (select count(*)::int from atendimento.conversas where empresa_id=$1 and created_at >= now() - interval '7 days') as conversas_7_dias,
+           (select count(*)::int from atendimento.execucoes_agente where empresa_id=$1 and iniciada_at >= now() - interval '7 days') as execucoes_ia_7_dias,
+           (select coalesce(sum(tokens_entrada + tokens_saida), 0)::int from atendimento.execucoes_agente where empresa_id=$1 and iniciada_at >= now() - interval '7 days') as tokens_ia_7_dias,
+           (select count(*)::int from atendimento.perguntas_sem_resposta where empresa_id=$1 and status in ('aberta', 'em_revisao')) as duvidas_abertas`,
+        [empresaId],
+      );
+      return result.rows[0];
+    });
   }
 
   async resolveUnknownQuestion(empresaId: string, id: string, input: ResolveQuestionDto) {

@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-const allowedRoots = new Set(['agentes', 'conhecimento', 'perguntas-sem-resposta', 'conversas', 'metricas']);
+const allowedRoots = new Set(['agentes', 'conhecimento', 'perguntas-sem-resposta', 'conversas', 'metricas', 'canais']);
 
 async function proxy(request: Request, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params;

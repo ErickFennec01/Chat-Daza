@@ -35,3 +35,11 @@ de banco, chave de tenant nem segredo de sessão.
 
 Em uma URL HTTPS publicada, defina `SESSION_COOKIE_SECURE=true`. O valor
 `false` do exemplo existe somente para o acesso local por `http://127.0.0.1`.
+
+## Canal WhatsApp Cloud
+
+Na aba **Canais**, informe o `Phone Number ID` e um access token da Meta. A API
+cifra o token com `CHANNEL_SECRETS_KEY` (uma chave Base64 de 32 bytes) antes de
+persisti-lo. O token não é devolvido pela API nem pelo painel. Uma decisão do
+agente cria primeiro uma entrega durável no banco; só então a API faz a chamada
+para a Meta e registra se a mensagem foi enviada ou falhou.

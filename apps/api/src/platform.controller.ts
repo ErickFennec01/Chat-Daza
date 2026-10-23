@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
-import { AgentDecisionDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, UpdateDocumentoDto, UpsertAgentDto } from './dto';
+import { AgentDecisionDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, UpdateDocumentoDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
 import { AppService } from './platform.service';
 import { requireAdminKey, requireInternalKey, TenantGuard, TenantRequest } from './tenant.guard';
 import { AuthService } from './auth.service';
@@ -121,6 +121,28 @@ export class AppController {
   @Get('metricas')
   metrics(@Req() request: TenantRequest) { return this.service.metrics(request.empresaId!); }
 
+  @UseGuards(TenantGuard)
+  @Get('canais/whatsapp')
+  listWhatsAppChannels(@Req() request: TenantRequest) { return this.service.listWhatsAppChannels(request.empresaId!); }
+
+  @UseGuards(TenantGuard)
+  @Post('canais/whatsapp')
+  createWhatsAppChannel(@Req() request: TenantRequest, @Body() input: CreateWhatsAppChannelDto) {
+    return this.service.createWhatsAppChannel(request.empresaId!, input);
+  }
+
+  @UseGuards(TenantGuard)
+  @Patch('canais/whatsapp/:id')
+  updateWhatsAppChannel(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: UpdateWhatsAppChannelDto) {
+    return this.service.updateWhatsAppChannel(request.empresaId!, id, input);
+  }
+
+  @UseGuards(TenantGuard)
+  @Delete('canais/whatsapp/:id')
+  deactivateWhatsAppChannel(@Req() request: TenantRequest, @Param('id') id: string) {
+    return this.service.deactivateWhatsAppChannel(request.empresaId!, id);
+  }
+
   @Get('webhooks/meta/whatsapp')
   verifyMetaWebhook(@Query() query: Record<string, string>) {
     if (query['hub.mode'] !== 'subscribe' || query['hub.verify_token'] !== process.env.META_VERIFY_TOKEN) throw new UnauthorizedException();
@@ -147,7 +169,15 @@ export class AppController {
   @HttpCode(202)
   processAgentDecision(@Headers('x-daza-internal-key') key: string | undefined, @Body() decision: AgentDecisionDto) {
     requireInternalKey(key);
-    return this.service.processAgentDecision(decision);
+    return this.service.processAgentDecision({
+      empresaId: decision.empresaId ?? decision.empresa_id!,
+      conversaId: decision.conversaId ?? decision.conversa_id!,
+      acao: decision.acao,
+      resposta: decision.resposta,
+      modelo: decision.modelo,
+      ragCache: decision.ragCache ?? decision.rag_cache,
+      motivoEscalonamento: decision.motivoEscalonamento ?? decision.motivo_escalonamento,
+    });
   }
 
   private assertMetaSignature(rawBody: Buffer | undefined, signature: string | undefined) {

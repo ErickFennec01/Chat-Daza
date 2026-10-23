@@ -2,9 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { createHmac, randomBytes } from 'node:crypto';
 import { PoolClient } from 'pg';
 import { DatabaseService } from './database.service';
-import { CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, ResolveQuestionDto, UpdateDocumentoDto, UpsertAgentDto } from './dto';
+import { CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, CreateWhatsAppChannelDto, ResolveQuestionDto, UpdateDocumentoDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
 import { AuthService } from './auth.service';
 import { ListConversationsQueryDto } from './dto';
+import { ChannelCryptoService } from './channel-crypto.service';
 
 function tokenHash(token: string): string {
   const pepper = process.env.TENANT_TOKEN_PEPPER;
@@ -14,7 +15,7 @@ function tokenHash(token: string): string {
 
 @Injectable()
 export class AppService {
-  constructor(private readonly db: DatabaseService, private readonly auth: AuthService) {}
+  constructor(private readonly db: DatabaseService, private readonly auth: AuthService, private readonly channelCrypto: ChannelCryptoService) {}
 
   async health() {
     await this.db.query('select 1');
@@ -113,6 +114,55 @@ export class AppService {
     });
   }
 
+  async listWhatsAppChannels(empresaId: string) {
+    return this.withTenantRows(empresaId, 'select id, agente_id, phone_number_id, display_name, provedor, ativo, token_cifrado is not null as token_configurado, created_at, updated_at from atendimento.canais_whatsapp order by created_at desc');
+  }
+
+  async createWhatsAppChannel(empresaId: string, input: CreateWhatsAppChannelDto) {
+    const tokenCifrado = this.channelCrypto.encrypt(input.accessToken.trim());
+    return this.db.withTenant(empresaId, async (client) => {
+      await this.ensureAgentBelongsToTenant(client, empresaId, input.agenteId);
+      const integration = await client.query<{ id: string }>(
+        "insert into atendimento.integracoes_canais (empresa_id, canal, identificador_destino) values ($1, 'whatsapp', $2) returning id",
+        [empresaId, input.phoneNumberId.trim()],
+      );
+      const result = await client.query(
+        `insert into atendimento.canais_whatsapp (empresa_id, integracao_id, agente_id, phone_number_id, display_name, token_cifrado)
+         values ($1, $2, $3, $4, $5, $6)
+         returning id, agente_id, phone_number_id, display_name, provedor, ativo, created_at`,
+        [empresaId, integration.rows[0].id, input.agenteId, input.phoneNumberId.trim(), input.displayName?.trim() ?? null, tokenCifrado],
+      );
+      return result.rows[0];
+    });
+  }
+
+  async updateWhatsAppChannel(empresaId: string, id: string, input: UpdateWhatsAppChannelDto) {
+    const tokenCifrado = input.accessToken ? this.channelCrypto.encrypt(input.accessToken.trim()) : null;
+    return this.db.withTenant(empresaId, async (client) => {
+      if (input.agenteId) await this.ensureAgentBelongsToTenant(client, empresaId, input.agenteId);
+      const result = await client.query(
+        `update atendimento.canais_whatsapp
+            set agente_id=coalesce($3, agente_id), display_name=coalesce($4, display_name),
+                token_cifrado=coalesce($5, token_cifrado), ativo=coalesce($6, ativo)
+          where id=$1 and empresa_id=$2
+          returning id, agente_id, phone_number_id, display_name, provedor, ativo, token_cifrado is not null as token_configurado, updated_at`,
+        [id, empresaId, input.agenteId ?? null, input.displayName?.trim() ?? null, tokenCifrado, input.ativo ?? null],
+      );
+      if (!result.rows[0]) throw new NotFoundException('Canal WhatsApp não encontrado');
+      await client.query('update atendimento.integracoes_canais set ativo=$3 where id=(select integracao_id from atendimento.canais_whatsapp where id=$1 and empresa_id=$2)', [id, empresaId, result.rows[0].ativo]);
+      return result.rows[0];
+    });
+  }
+
+  async deactivateWhatsAppChannel(empresaId: string, id: string) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query('update atendimento.canais_whatsapp set ativo=false where id=$1 and empresa_id=$2 returning id, integracao_id, ativo', [id, empresaId]);
+      if (!result.rows[0]) throw new NotFoundException('Canal WhatsApp não encontrado');
+      await client.query('update atendimento.integracoes_canais set ativo=false where id=$1', [result.rows[0].integracao_id]);
+      return { id: result.rows[0].id, ativo: false };
+    });
+  }
+
   async listUnknownQuestions(empresaId: string) {
     return this.withTenantRows(empresaId, 'select id, conversa_id, pergunta, motivo, status, resposta_curada, created_at from atendimento.perguntas_sem_resposta order by created_at desc');
   }
@@ -196,8 +246,20 @@ export class AppService {
   }
 
   async processAgentDecision(decision: { empresaId: string; conversaId: string; acao: string; resposta: string; modelo: string; ragCache?: boolean; motivoEscalonamento?: string }) {
-    return this.db.withTenant(decision.empresaId, async (client) => {
-      await client.query('select atendimento.registrar_saida($1::uuid, $2::uuid, $3, $4)', [decision.empresaId, decision.conversaId, decision.resposta, decision.modelo]);
+    const delivery = await this.db.withTenant(decision.empresaId, async (client) => {
+      const message = await client.query<{ mensagem_id: string }>('select atendimento.registrar_saida($1::uuid, $2::uuid, $3, $4) as mensagem_id', [decision.empresaId, decision.conversaId, decision.resposta, decision.modelo]);
+      const conversation = await client.query<{ canal: string; contato_externo: string; canal_id: string | null }>(
+        "select canal, contato_externo, metadados->>'canal_id' as canal_id from atendimento.conversas where id=$1 and empresa_id=$2",
+        [decision.conversaId, decision.empresaId],
+      );
+      if (!conversation.rows[0]) throw new NotFoundException('Conversa não encontrada');
+      const channelId = await this.resolveOutgoingChannelId(client, decision.empresaId, conversation.rows[0].canal, conversation.rows[0].canal_id);
+      const queued = await client.query<{ id: string }>(
+        `insert into atendimento.entregas_mensagens (empresa_id, conversa_id, mensagem_id, canal_whatsapp_id, status, erro_codigo)
+         values ($1, $2, $3, $4, case when $4 is null then 'falha' else 'pendente' end, case when $4 is null then 'CANAL_NAO_CONFIGURADO' else null end)
+         returning id`,
+        [decision.empresaId, decision.conversaId, message.rows[0].mensagem_id, channelId],
+      );
       if (decision.acao === 'escalar') {
         await client.query('select atendimento.finalizar_conversa($1::uuid, $2::uuid, $3, $4, $5)', [decision.empresaId, decision.conversaId, 'aguardando_humano', decision.motivoEscalonamento ?? null, 'ia_escalou']);
         await client.query(
@@ -205,8 +267,11 @@ export class AppService {
           [decision.empresaId, decision.conversaId, decision.motivoEscalonamento ?? decision.resposta],
         );
       }
-      return { aceita: true };
+      return { id: queued.rows[0].id, canalConfigurado: channelId !== null };
     });
+    if (!delivery.canalConfigurado) return { aceita: true, entregaId: delivery.id, statusEntrega: 'falha', motivo: 'Canal WhatsApp não configurado para a conversa' };
+    const statusEntrega = await this.deliverWhatsAppMessage(decision.empresaId, delivery.id);
+    return { aceita: true, entregaId: delivery.id, statusEntrega };
   }
 
   async resolveWhatsAppChannel(phoneNumberId: string) {
@@ -218,5 +283,72 @@ export class AppService {
 
   private async withTenantRows(empresaId: string, text: string) {
     return this.db.withTenant(empresaId, async (client: PoolClient) => (await client.query(text)).rows);
+  }
+
+  private async ensureAgentBelongsToTenant(client: PoolClient, empresaId: string, agentId: string) {
+    const agent = await client.query('select id from atendimento.agentes where id=$1 and empresa_id=$2 and ativo', [agentId, empresaId]);
+    if (!agent.rows[0]) throw new NotFoundException('Agente ativo não encontrado para a empresa');
+  }
+
+  private async resolveOutgoingChannelId(client: PoolClient, empresaId: string, canal: string, configuredChannelId: string | null) {
+    if (canal !== 'whatsapp') return null;
+    if (configuredChannelId && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(configuredChannelId)) {
+      const selected = await client.query<{ id: string }>('select id from atendimento.canais_whatsapp where id=$1 and empresa_id=$2 and ativo', [configuredChannelId, empresaId]);
+      if (selected.rows[0]) return selected.rows[0].id;
+    }
+    const candidates = await client.query<{ id: string }>('select id from atendimento.canais_whatsapp where empresa_id=$1 and ativo order by created_at asc limit 2', [empresaId]);
+    return candidates.rows.length === 1 ? candidates.rows[0].id : null;
+  }
+
+  private async deliverWhatsAppMessage(empresaId: string, deliveryId: string): Promise<'enviada' | 'falha'> {
+    const delivery = await this.db.withTenant(empresaId, async (client) => {
+      const claimed = await client.query<{ id: string; canal_whatsapp_id: string | null; conteudo: string; contato_externo: string }>(
+        `update atendimento.entregas_mensagens set status='processando', tentativas=tentativas+1, erro_codigo=null, erro_detalhe=null
+          where id=$1 and empresa_id=$2 and status='pendente'
+          returning id, canal_whatsapp_id,
+            (select conteudo from atendimento.mensagens where id=mensagem_id) as conteudo,
+            (select contato_externo from atendimento.conversas where id=conversa_id) as contato_externo`,
+        [deliveryId, empresaId],
+      );
+      if (!claimed.rows[0]) return null;
+      if (!claimed.rows[0].canal_whatsapp_id) return claimed.rows[0];
+      const channel = await client.query<{ phone_number_id: string; token_cifrado: Buffer | null }>(
+        'select phone_number_id, token_cifrado from atendimento.canais_whatsapp where id=$1 and empresa_id=$2 and ativo',
+        [claimed.rows[0].canal_whatsapp_id, empresaId],
+      );
+      return { ...claimed.rows[0], channel: channel.rows[0] ?? null };
+    });
+    if (!delivery || !('channel' in delivery) || !delivery.channel?.token_cifrado) {
+      await this.failDelivery(empresaId, deliveryId, 'CANAL_NAO_CONFIGURADO', 'Canal ativo ou token cifrado indisponível');
+      return 'falha';
+    }
+    try {
+      const token = this.channelCrypto.decrypt(delivery.channel.token_cifrado);
+      const graphVersion = process.env.META_GRAPH_API_VERSION ?? 'v22.0';
+      const response = await fetch(`https://graph.facebook.com/${graphVersion}/${encodeURIComponent(delivery.channel.phone_number_id)}/messages`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ messaging_product: 'whatsapp', to: delivery.contato_externo, type: 'text', text: { body: delivery.conteudo } }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      const payload = await response.json().catch(() => ({})) as { messages?: Array<{ id?: string }>; error?: { code?: number; message?: string } };
+      if (!response.ok || !payload.messages?.[0]?.id) {
+        await this.failDelivery(empresaId, deliveryId, `META_${payload.error?.code ?? response.status}`, payload.error?.message ?? 'Meta não confirmou a entrega');
+        return 'falha';
+      }
+      await this.db.withTenant(empresaId, async (client) => {
+        await client.query("update atendimento.entregas_mensagens set status='enviada', provedor_mensagem_id=$3, enviada_em=now() where id=$1 and empresa_id=$2", [deliveryId, empresaId, payload.messages![0].id]);
+      });
+      return 'enviada';
+    } catch {
+      await this.failDelivery(empresaId, deliveryId, 'META_INDISPONIVEL', 'Falha de rede ou cifra ao comunicar com a Meta');
+      return 'falha';
+    }
+  }
+
+  private async failDelivery(empresaId: string, deliveryId: string, code: string, detail: string) {
+    await this.db.withTenant(empresaId, async (client) => {
+      await client.query("update atendimento.entregas_mensagens set status='falha', erro_codigo=$3, erro_detalhe=left($4, 2000), proxima_tentativa_em=now() + interval '5 minutes' where id=$1 and empresa_id=$2", [deliveryId, empresaId, code, detail]);
+    });
   }
 }

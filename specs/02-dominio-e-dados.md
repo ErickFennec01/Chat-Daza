@@ -27,6 +27,15 @@
 - Métricas são agregadas no PostgreSQL e retornadas somente para o tenant da
   sessão. Não há telemetria de outra empresa no navegador.
 
+## Canal e entrega de mensagens
+
+- `canais_whatsapp` aponta para uma `integracoes_canais` do número e mantém o
+  access token somente em `token_cifrado`.
+- `entregas_mensagens` é a caixa de saída: cada mensagem de saída tem uma única
+  entrega, com tentativas, identificador da Meta e falha auditável.
+- O `canal_id` normalizado no evento de entrada é salvo nos metadados da
+  conversa. Ele define qual número deve ser usado na resposta.
+
 ## Isolamento
 
 1. A chave de API ou sessão assinada resolve um único `empresa_id` no backend.

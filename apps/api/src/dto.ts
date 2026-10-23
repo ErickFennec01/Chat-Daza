@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, Length, Matches, Max, Min, ValidateIf } from 'class-validator';
 
 export class CreateEmpresaDto {
   @IsString() @Length(2, 240) razaoSocial!: string;
@@ -52,16 +52,34 @@ export class ResolveQuestionDto {
 }
 
 export class AgentDecisionDto {
-  @IsUUID() empresaId!: string;
-  @IsUUID() conversaId!: string;
+  @ValidateIf((input) => input.empresa_id === undefined) @IsUUID() empresaId?: string;
+  @IsOptional() @IsUUID() empresa_id?: string;
+  @ValidateIf((input) => input.conversa_id === undefined) @IsUUID() conversaId?: string;
+  @IsOptional() @IsUUID() conversa_id?: string;
   @IsIn(['responder', 'escalar']) acao!: 'responder' | 'escalar';
   @IsString() @Length(1, 8000) resposta!: string;
-  @IsOptional() @IsString() @Length(1, 2000) motivoEscalonamento?: string;
+  @ValidateIf((input) => input.motivo_escalonamento === undefined) @IsOptional() @IsString() @Length(1, 2000) motivoEscalonamento?: string;
+  @IsOptional() @IsString() @Length(1, 2000) motivo_escalonamento?: string;
   @IsString() @Length(3, 160) modelo!: string;
-  @IsOptional() ragCache?: boolean;
+  @ValidateIf((input) => input.rag_cache === undefined) @IsOptional() @IsBoolean() ragCache?: boolean;
+  @IsOptional() @IsBoolean() rag_cache?: boolean;
 }
 
 export class ListConversationsQueryDto {
   @IsOptional() @IsIn(['aberta', 'aguardando_humano', 'resolvida', 'encerrada']) status?: string;
   @IsOptional() @Type(() => Number) @Min(1) @Max(100) limit?: number;
+}
+
+export class CreateWhatsAppChannelDto {
+  @IsUUID() agenteId!: string;
+  @IsString() @Length(4, 160) phoneNumberId!: string;
+  @IsOptional() @IsString() @Length(1, 240) displayName?: string;
+  @IsString() @Length(20, 4096) accessToken!: string;
+}
+
+export class UpdateWhatsAppChannelDto {
+  @IsOptional() @IsUUID() agenteId?: string;
+  @IsOptional() @IsString() @Length(1, 240) displayName?: string;
+  @IsOptional() @IsString() @Length(20, 4096) accessToken?: string;
+  @IsOptional() @IsBoolean() ativo?: boolean;
 }

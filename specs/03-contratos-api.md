@@ -28,7 +28,7 @@
 - `GET /v1/conversas`, `GET /v1/conversas/{id}`
 - `POST /v1/conversas/{id}/assumir` — atribui uma conversa aberta ao usuário da sessão e interrompe a fila automática.
 - `GET /v1/metricas`
-- `GET|POST|PATCH /v1/canais/whatsapp`
+- `GET|POST /v1/canais/whatsapp`, `PATCH|DELETE /v1/canais/whatsapp/{id}`
 
 ### Integrações
 
@@ -64,4 +64,6 @@
 }
 ```
 
-A API valida a conversa antes de enviar a resposta para o canal.
+A API valida a conversa, registra uma entrega durável e só então envia a
+resposta para o canal Meta configurado. Em falha, a entrega fica auditável como
+`falha`; o token da Meta jamais é retornado ao n8n ou ao painel.

@@ -17,6 +17,23 @@ services:
           - daza-atendimento-api
       proxy: {}
 
+  waha:
+    image: devlikeapro/waha:latest-2026.8.2
+    restart: unless-stopped
+    environment:
+      WAHA_API_KEY: ${WAHA_API_KEY}
+      WAHA_DASHBOARD_ENABLED: "false"
+      WHATSAPP_SWAGGER_ENABLED: "false"
+      WAHA_PRINT_QR: "false"
+      WHATSAPP_RESTART_ALL_SESSIONS: "true"
+      WHATSAPP_HOOK_URL: http://daza-atendimento-api:8000/v1/webhooks/waha/whatsapp
+      WHATSAPP_HOOK_EVENTS: message
+      WHATSAPP_HOOK_CUSTOM_HEADERS: X-DAZA-WAHA-Webhook:${WAHA_WEBHOOK_SECRET}
+    volumes:
+      - waha_sessions:/app/.sessions
+    networks:
+      - erp
+
   web:
     build: ./apps/web
     restart: unless-stopped
@@ -37,3 +54,6 @@ networks:
   proxy:
     name: homelab_proxy
     external: true
+
+volumes:
+  waha_sessions:

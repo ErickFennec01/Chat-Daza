@@ -72,14 +72,12 @@ export class ListConversationsQueryDto {
 
 export class CreateWhatsAppChannelDto {
   @IsUUID() agenteId!: string;
-  @IsString() @Length(4, 160) phoneNumberId!: string;
+  @IsString() @Matches(/^[a-z0-9][a-z0-9-]{2,79}$/) sessao!: string;
   @IsOptional() @IsString() @Length(1, 240) displayName?: string;
-  @IsString() @Length(20, 4096) accessToken!: string;
 }
 
 export class UpdateWhatsAppChannelDto {
   @IsOptional() @IsUUID() agenteId?: string;
   @IsOptional() @IsString() @Length(1, 240) displayName?: string;
-  @IsOptional() @IsString() @Length(20, 4096) accessToken?: string;
   @IsOptional() @IsBoolean() ativo?: boolean;
 }

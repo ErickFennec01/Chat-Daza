@@ -9,6 +9,7 @@ import { AuthService } from './auth.service';
 type MetaPayload = {
   entry?: Array<{ changes?: Array<{ value?: { metadata?: { phone_number_id?: string }; messages?: Array<{ id?: string; from?: string; text?: { body?: string } }> } }> }>;
 };
+type WahaPayload = { event?: string; session?: string; payload?: { id?: string; from?: string; body?: string; fromMe?: boolean } };
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 
 @Controller()
@@ -157,6 +158,30 @@ export class AppController {
     return this.service.deactivateWhatsAppChannel(request.empresaId!, id);
   }
 
+  @UseGuards(TenantGuard)
+  @Post('canais/whatsapp/:id/conectar')
+  connectWhatsAppChannel(@Req() request: TenantRequest, @Param('id') id: string) {
+    requirePanelAdmin(request);
+    return this.service.connectWhatsAppChannel(request.empresaId!, id);
+  }
+
+  @Post('webhooks/waha/whatsapp')
+  @HttpCode(200)
+  async receiveWahaWebhook(@Headers('x-daza-waha-webhook') key: string | undefined, @Body() payload: WahaPayload) {
+    this.assertWahaWebhookKey(key);
+    const body = payload.payload?.body?.trim();
+    const from = payload.payload?.from ?? '';
+    if (payload.event !== 'message' || payload.payload?.fromMe || !payload.session || !payload.payload?.id || !body || !/^[0-9]+@(c\.us|s\.whatsapp\.net)$/.test(from)) return { recebido: true, ignorado: true };
+    const channel = await this.service.resolveWahaChannel(payload.session);
+    if (!channel) return { recebido: true, ignorado: true };
+    const remetente = from.replace(/@(c\.us|s\.whatsapp\.net)$/, '');
+    void this.dispatchToN8n({
+      canal: 'whatsapp', destinatario: payload.session, remetente, id_externo: payload.payload.id, mensagem: body,
+      metadados: { canal_id: channel.canal_id, agente_id: channel.agente_id, provedor: 'waha' },
+    });
+    return { recebido: true };
+  }
+
   @Get('webhooks/meta/whatsapp')
   verifyMetaWebhook(@Query() query: Record<string, string>) {
     if (query['hub.mode'] !== 'subscribe' || query['hub.verify_token'] !== process.env.META_VERIFY_TOKEN) throw new UnauthorizedException();
@@ -200,6 +225,11 @@ export class AppController {
     const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
     const actual = signature.slice(7);
     if (actual.length !== expected.length || !timingSafeEqual(Buffer.from(actual), Buffer.from(expected))) throw new UnauthorizedException('Assinatura Meta inválida');
+  }
+
+  private assertWahaWebhookKey(received: string | undefined) {
+    const expected = process.env.WAHA_WEBHOOK_SECRET;
+    if (!expected || !received || expected.length !== received.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(received))) throw new UnauthorizedException('Webhook WAHA inválido');
   }
 
   private extractMetaEvents(payload: MetaPayload) {

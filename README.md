@@ -36,10 +36,13 @@ de banco, chave de tenant nem segredo de sessão.
 Em uma URL HTTPS publicada, defina `SESSION_COOKIE_SECURE=true`. O valor
 `false` do exemplo existe somente para o acesso local por `http://127.0.0.1`.
 
-## Canal WhatsApp Cloud
+## Canal WhatsApp por WAHA
 
-Na aba **Canais**, informe o `Phone Number ID` e um access token da Meta. A API
-cifra o token com `CHANNEL_SECRETS_KEY` (uma chave Base64 de 32 bytes) antes de
-persisti-lo. O token não é devolvido pela API nem pelo painel. Uma decisão do
-agente cria primeiro uma entrega durável no banco; só então a API faz a chamada
-para a Meta e registra se a mensagem foi enviada ou falhou.
+O MVP usa WAHA Core autocontrolado. Na aba **Canais**, escolha o agente, informe
+um nome de sessão e gere o QR Code para parear o número pelo WhatsApp. Não há
+token Meta no painel. O WAHA fica privado na rede Docker; a API recebe seus
+webhooks com cabeçalho secreto e preserva a caixa de saída durável antes de cada
+envio.
+
+WAHA é um cliente não oficial de WhatsApp Web. Use números dedicados e
+autorizados, sem disparos em massa, pois existe risco de bloqueio pela plataforma.

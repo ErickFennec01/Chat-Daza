@@ -5,7 +5,7 @@ import { DatabaseService } from './database.service';
 import { CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, CreateWhatsAppChannelDto, ResolveQuestionDto, UpdateDocumentoDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
 import { AuthService } from './auth.service';
 import { ListConversationsQueryDto } from './dto';
-import { ChannelCryptoService } from './channel-crypto.service';
+import { WahaService } from './waha.service';
 
 function tokenHash(token: string): string {
   const pepper = process.env.TENANT_TOKEN_PEPPER;
@@ -15,7 +15,7 @@ function tokenHash(token: string): string {
 
 @Injectable()
 export class AppService {
-  constructor(private readonly db: DatabaseService, private readonly auth: AuthService, private readonly channelCrypto: ChannelCryptoService) {}
+  constructor(private readonly db: DatabaseService, private readonly auth: AuthService, private readonly waha: WahaService) {}
 
   async health() {
     await this.db.query('select 1');
@@ -115,38 +115,36 @@ export class AppService {
   }
 
   async listWhatsAppChannels(empresaId: string) {
-    return this.withTenantRows(empresaId, 'select id, agente_id, phone_number_id, display_name, provedor, ativo, token_cifrado is not null as token_configurado, created_at, updated_at from atendimento.canais_whatsapp order by created_at desc');
+    return this.withTenantRows(empresaId, "select id, agente_id, sessao_waha, display_name, provedor, ativo, created_at, updated_at from atendimento.canais_whatsapp where provedor='waha' order by created_at desc");
   }
 
   async createWhatsAppChannel(empresaId: string, input: CreateWhatsAppChannelDto) {
-    const tokenCifrado = this.channelCrypto.encrypt(input.accessToken.trim());
+    const session = input.sessao.trim();
     return this.db.withTenant(empresaId, async (client) => {
       await this.ensureAgentBelongsToTenant(client, empresaId, input.agenteId);
       const integration = await client.query<{ id: string }>(
         "insert into atendimento.integracoes_canais (empresa_id, canal, identificador_destino) values ($1, 'whatsapp', $2) returning id",
-        [empresaId, input.phoneNumberId.trim()],
+        [empresaId, session],
       );
       const result = await client.query(
-        `insert into atendimento.canais_whatsapp (empresa_id, integracao_id, agente_id, phone_number_id, display_name, token_cifrado)
-         values ($1, $2, $3, $4, $5, $6)
-         returning id, agente_id, phone_number_id, display_name, provedor, ativo, created_at`,
-        [empresaId, integration.rows[0].id, input.agenteId, input.phoneNumberId.trim(), input.displayName?.trim() ?? null, tokenCifrado],
+        `insert into atendimento.canais_whatsapp (empresa_id, integracao_id, agente_id, provedor, phone_number_id, sessao_waha, display_name)
+         values ($1, $2, $3, 'waha', $4, $4, $5)
+         returning id, agente_id, sessao_waha, display_name, provedor, ativo, created_at`,
+        [empresaId, integration.rows[0].id, input.agenteId, session, input.displayName?.trim() ?? null],
       );
       return result.rows[0];
     });
   }
 
   async updateWhatsAppChannel(empresaId: string, id: string, input: UpdateWhatsAppChannelDto) {
-    const tokenCifrado = input.accessToken ? this.channelCrypto.encrypt(input.accessToken.trim()) : null;
     return this.db.withTenant(empresaId, async (client) => {
       if (input.agenteId) await this.ensureAgentBelongsToTenant(client, empresaId, input.agenteId);
       const result = await client.query(
         `update atendimento.canais_whatsapp
-            set agente_id=coalesce($3, agente_id), display_name=coalesce($4, display_name),
-                token_cifrado=coalesce($5, token_cifrado), ativo=coalesce($6, ativo)
+            set agente_id=coalesce($3, agente_id), display_name=coalesce($4, display_name), ativo=coalesce($5, ativo)
           where id=$1 and empresa_id=$2
-          returning id, agente_id, phone_number_id, display_name, provedor, ativo, token_cifrado is not null as token_configurado, updated_at`,
-        [id, empresaId, input.agenteId ?? null, input.displayName?.trim() ?? null, tokenCifrado, input.ativo ?? null],
+          returning id, agente_id, sessao_waha, display_name, provedor, ativo, updated_at`,
+        [id, empresaId, input.agenteId ?? null, input.displayName?.trim() ?? null, input.ativo ?? null],
       );
       if (!result.rows[0]) throw new NotFoundException('Canal WhatsApp não encontrado');
       await client.query('update atendimento.integracoes_canais set ativo=$3 where id=(select integracao_id from atendimento.canais_whatsapp where id=$1 and empresa_id=$2)', [id, empresaId, result.rows[0].ativo]);
@@ -161,6 +159,16 @@ export class AppService {
       await client.query('update atendimento.integracoes_canais set ativo=false where id=$1', [result.rows[0].integracao_id]);
       return { id: result.rows[0].id, ativo: false };
     });
+  }
+
+  async connectWhatsAppChannel(empresaId: string, id: string) {
+    const channel = await this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query<{ sessao_waha: string }>("select sessao_waha from atendimento.canais_whatsapp where id=$1 and empresa_id=$2 and provedor='waha' and ativo", [id, empresaId]);
+      if (!result.rows[0]?.sessao_waha) throw new NotFoundException('Canal WAHA ativo não encontrado');
+      return result.rows[0];
+    });
+    await this.waha.startSession(channel.sessao_waha);
+    return { sessao: channel.sessao_waha, qrDataUrl: await this.waha.getQrDataUrl(channel.sessao_waha) };
   }
 
   async listUnknownQuestions(empresaId: string) {
@@ -253,12 +261,12 @@ export class AppService {
         [decision.conversaId, decision.empresaId],
       );
       if (!conversation.rows[0]) throw new NotFoundException('Conversa não encontrada');
-      const channelId = await this.resolveOutgoingChannelId(client, decision.empresaId, conversation.rows[0].canal, conversation.rows[0].canal_id);
+      const channel = await this.resolveOutgoingChannel(client, decision.empresaId, conversation.rows[0].canal, conversation.rows[0].canal_id);
       const queued = await client.query<{ id: string }>(
-        `insert into atendimento.entregas_mensagens (empresa_id, conversa_id, mensagem_id, canal_whatsapp_id, status, erro_codigo)
-         values ($1, $2, $3, $4, case when $4 is null then 'falha' else 'pendente' end, case when $4 is null then 'CANAL_NAO_CONFIGURADO' else null end)
+        `insert into atendimento.entregas_mensagens (empresa_id, conversa_id, mensagem_id, canal_whatsapp_id, provedor, status, erro_codigo)
+         values ($1, $2, $3, $4, $5, case when $4 is null then 'falha' else 'pendente' end, case when $4 is null then 'CANAL_NAO_CONFIGURADO' else null end)
          returning id`,
-        [decision.empresaId, decision.conversaId, message.rows[0].mensagem_id, channelId],
+        [decision.empresaId, decision.conversaId, message.rows[0].mensagem_id, channel?.id ?? null, channel?.provedor ?? 'waha'],
       );
       if (decision.acao === 'escalar') {
         await client.query('select atendimento.finalizar_conversa($1::uuid, $2::uuid, $3, $4, $5)', [decision.empresaId, decision.conversaId, 'aguardando_humano', decision.motivoEscalonamento ?? null, 'ia_escalou']);
@@ -267,7 +275,7 @@ export class AppService {
           [decision.empresaId, decision.conversaId, decision.motivoEscalonamento ?? decision.resposta],
         );
       }
-      return { id: queued.rows[0].id, canalConfigurado: channelId !== null };
+      return { id: queued.rows[0].id, canalConfigurado: channel !== null };
     });
     if (!delivery.canalConfigurado) return { aceita: true, entregaId: delivery.id, statusEntrega: 'falha', motivo: 'Canal WhatsApp não configurado para a conversa' };
     const statusEntrega = await this.deliverWhatsAppMessage(decision.empresaId, delivery.id);
@@ -281,6 +289,11 @@ export class AppService {
     return result.rows[0] ?? null;
   }
 
+  async resolveWahaChannel(session: string) {
+    const result = await this.db.query<{ empresa_id: string; canal_id: string; agente_id: string; provedor: string }>('select * from atendimento.resolver_canal_waha($1)', [session]);
+    return result.rows[0] ?? null;
+  }
+
   private async withTenantRows(empresaId: string, text: string) {
     return this.db.withTenant(empresaId, async (client: PoolClient) => (await client.query(text)).rows);
   }
@@ -290,14 +303,14 @@ export class AppService {
     if (!agent.rows[0]) throw new NotFoundException('Agente ativo não encontrado para a empresa');
   }
 
-  private async resolveOutgoingChannelId(client: PoolClient, empresaId: string, canal: string, configuredChannelId: string | null) {
+  private async resolveOutgoingChannel(client: PoolClient, empresaId: string, canal: string, configuredChannelId: string | null): Promise<{ id: string; provedor: 'waha' } | null> {
     if (canal !== 'whatsapp') return null;
     if (configuredChannelId && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(configuredChannelId)) {
-      const selected = await client.query<{ id: string }>('select id from atendimento.canais_whatsapp where id=$1 and empresa_id=$2 and ativo', [configuredChannelId, empresaId]);
-      if (selected.rows[0]) return selected.rows[0].id;
+      const selected = await client.query<{ id: string; provedor: 'waha' }>("select id, provedor from atendimento.canais_whatsapp where id=$1 and empresa_id=$2 and ativo and provedor='waha'", [configuredChannelId, empresaId]);
+      if (selected.rows[0]) return selected.rows[0];
     }
-    const candidates = await client.query<{ id: string }>('select id from atendimento.canais_whatsapp where empresa_id=$1 and ativo order by created_at asc limit 2', [empresaId]);
-    return candidates.rows.length === 1 ? candidates.rows[0].id : null;
+    const candidates = await client.query<{ id: string; provedor: 'waha' }>("select id, provedor from atendimento.canais_whatsapp where empresa_id=$1 and ativo and provedor='waha' order by created_at asc limit 2", [empresaId]);
+    return candidates.rows.length === 1 ? candidates.rows[0] : null;
   }
 
   private async deliverWhatsAppMessage(empresaId: string, deliveryId: string): Promise<'enviada' | 'falha'> {
@@ -312,36 +325,24 @@ export class AppService {
       );
       if (!claimed.rows[0]) return null;
       if (!claimed.rows[0].canal_whatsapp_id) return claimed.rows[0];
-      const channel = await client.query<{ phone_number_id: string; token_cifrado: Buffer | null }>(
-        'select phone_number_id, token_cifrado from atendimento.canais_whatsapp where id=$1 and empresa_id=$2 and ativo',
+      const channel = await client.query<{ sessao_waha: string | null }>(
+        "select sessao_waha from atendimento.canais_whatsapp where id=$1 and empresa_id=$2 and ativo and provedor='waha'",
         [claimed.rows[0].canal_whatsapp_id, empresaId],
       );
       return { ...claimed.rows[0], channel: channel.rows[0] ?? null };
     });
-    if (!delivery || !('channel' in delivery) || !delivery.channel?.token_cifrado) {
-      await this.failDelivery(empresaId, deliveryId, 'CANAL_NAO_CONFIGURADO', 'Canal ativo ou token cifrado indisponível');
+    if (!delivery || !('channel' in delivery) || !delivery.channel?.sessao_waha) {
+      await this.failDelivery(empresaId, deliveryId, 'CANAL_NAO_CONFIGURADO', 'Canal WAHA ativo indisponível');
       return 'falha';
     }
     try {
-      const token = this.channelCrypto.decrypt(delivery.channel.token_cifrado);
-      const graphVersion = process.env.META_GRAPH_API_VERSION ?? 'v22.0';
-      const response = await fetch(`https://graph.facebook.com/${graphVersion}/${encodeURIComponent(delivery.channel.phone_number_id)}/messages`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ messaging_product: 'whatsapp', to: delivery.contato_externo, type: 'text', text: { body: delivery.conteudo } }),
-        signal: AbortSignal.timeout(15_000),
-      });
-      const payload = await response.json().catch(() => ({})) as { messages?: Array<{ id?: string }>; error?: { code?: number; message?: string } };
-      if (!response.ok || !payload.messages?.[0]?.id) {
-        await this.failDelivery(empresaId, deliveryId, `META_${payload.error?.code ?? response.status}`, payload.error?.message ?? 'Meta não confirmou a entrega');
-        return 'falha';
-      }
+      const providerMessageId = await this.waha.sendText(delivery.channel.sessao_waha, delivery.contato_externo, delivery.conteudo);
       await this.db.withTenant(empresaId, async (client) => {
-        await client.query("update atendimento.entregas_mensagens set status='enviada', provedor_mensagem_id=$3, enviada_em=now() where id=$1 and empresa_id=$2", [deliveryId, empresaId, payload.messages![0].id]);
+        await client.query("update atendimento.entregas_mensagens set status='enviada', provedor_mensagem_id=$3, enviada_em=now() where id=$1 and empresa_id=$2", [deliveryId, empresaId, providerMessageId]);
       });
       return 'enviada';
     } catch {
-      await this.failDelivery(empresaId, deliveryId, 'META_INDISPONIVEL', 'Falha de rede ou cifra ao comunicar com a Meta');
+      await this.failDelivery(empresaId, deliveryId, 'WAHA_INDISPONIVEL', 'Falha de rede ao comunicar com WAHA');
       return 'falha';
     }
   }

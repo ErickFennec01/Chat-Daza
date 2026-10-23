@@ -4,10 +4,10 @@ import { AppService } from './platform.service';
 import { DatabaseService } from './database.service';
 import { TenantGuard } from './tenant.guard';
 import { AuthService } from './auth.service';
-import { ChannelCryptoService } from './channel-crypto.service';
+import { WahaService } from './waha.service';
 
 @Module({
   controllers: [AppController],
-  providers: [AppService, DatabaseService, AuthService, ChannelCryptoService, TenantGuard],
+  providers: [AppService, DatabaseService, AuthService, WahaService, TenantGuard],
 })
 export class AppModule {}

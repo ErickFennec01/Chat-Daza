@@ -34,9 +34,7 @@ export class AuthService {
     if (!user || !(await bcrypt.compare(password, user.senha_hash))) {
       throw new UnauthorizedException('E-mail ou senha inválidos');
     }
-    await this.db.withTenant(user.empresa_id, async (client) => {
-      await client.query('update atendimento.usuarios set ultimo_login_em = now() where id = $1', [user.id]);
-    });
+    await this.db.query('select atendimento.registrar_login_usuario($1::uuid, $2::uuid)', [user.id, user.empresa_id]);
     const identity: SessionIdentity = {
       usuarioId: user.id,
       empresaId: user.empresa_id,

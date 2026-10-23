@@ -24,7 +24,7 @@ export class AppService {
 
   async createEmpresa(input: CreateEmpresaDto) {
     const result = await this.db.query<{ id: string; razao_social: string; slug: string }>(
-      'insert into atendimento.empresas (empresa_erp_id, razao_social, slug) values ($1, $2, $3) returning id, razao_social, slug',
+      'select * from atendimento.criar_empresa($1::uuid, $2, $3)',
       [input.empresaErpId ?? null, input.razaoSocial.trim(), input.slug],
     );
     return result.rows[0];
@@ -47,7 +47,7 @@ export class AppService {
     const senhaHash = await this.auth.hashPassword(input.senha);
     return this.db.withTenant(empresaId, async (client) => {
       const result = await client.query(
-        'insert into atendimento.usuarios (empresa_id, nome, email, senha_hash, papel) values ($1, $2, lower($3), $4, $5) returning id, empresa_id, nome, email, papel, ativo, created_at',
+        'select * from atendimento.criar_usuario_painel($1::uuid, $2, $3, $4, $5)',
         [empresaId, input.nome.trim(), input.email.trim(), senhaHash, input.papel],
       );
       return result.rows[0];

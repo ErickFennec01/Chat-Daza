@@ -10,7 +10,9 @@
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "lint": "tsc --noEmit",
-    "test": "node --test dist/**/*.spec.js"
+    "test": "npm run build && node --test dist/**/*.spec.js",
+    "test:unit": "npm run build && node --test dist/**/*.unit.spec.js",
+    "test:integration": "npm run build && node --test dist/**/*.integration.spec.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

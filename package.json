@@ -1,0 +1,11 @@
+{
+  "name": "chat-daza",
+  "private": true,
+  "scripts": {
+    "test": "npm --prefix apps/api test && npm run test:e2e",
+    "test:unit": "npm --prefix apps/api run test:unit",
+    "test:integration": "npm --prefix apps/api run test:integration",
+    "test:e2e": "node --test tests/e2e/runtime-smoke.spec.mjs",
+    "verify": "npm --prefix apps/api run lint && npm --prefix apps/web run lint && npm run test"
+  }
+}

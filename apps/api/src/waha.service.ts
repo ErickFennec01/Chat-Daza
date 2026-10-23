@@ -5,17 +5,24 @@ type WahaReply = { id?: string; key?: { id?: string }; data?: string };
 @Injectable()
 export class WahaService {
   async startSession(session: string) {
-    await this.request('/api/sessions', { method: 'POST', body: JSON.stringify({ name: session }) }, [200, 201, 409]);
+    // O WAHA usa 422 para informar que a sessão já existe. Isso é esperado
+    // quando o administrador pede um novo QR para um canal já salvo.
+    await this.request('/api/sessions', { method: 'POST', body: JSON.stringify({ name: session }) }, [200, 201, 409, 422]);
     // Criar a sessão não garante que ela entre em modo de pareamento. O start
     // também é seguro para sessões já existentes, tornando a ação idempotente.
     await this.request(`/api/sessions/${encodeURIComponent(session)}/start`, { method: 'POST' }, [200, 201, 409, 422]);
   }
 
   async getQrDataUrl(session: string): Promise<string> {
-    const response = await this.request(`/api/${encodeURIComponent(session)}/auth/qr?format=image`, { headers: { accept: 'application/json' } }, [200]);
-    const body = await response.json().catch(() => ({})) as WahaReply & { mimetype?: string };
-    if (!body.data || !body.mimetype?.startsWith('image/')) throw new BadGatewayException('WAHA ainda não disponibilizou o QR Code. Aguarde alguns segundos e tente novamente.');
-    return `data:${body.mimetype};base64,${body.data}`;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await this.request(`/api/${encodeURIComponent(session)}/auth/qr?format=image`, { headers: { accept: 'application/json' } }, [200, 422]);
+      if (response.status === 200) {
+        const body = await response.json().catch(() => ({})) as WahaReply & { mimetype?: string };
+        if (body.data && body.mimetype?.startsWith('image/')) return `data:${body.mimetype};base64,${body.data}`;
+      }
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1_500));
+    }
+    throw new BadGatewayException('WAHA ainda está preparando o QR Code. Aguarde alguns segundos e tente novamente.');
   }
 
   async sendText(session: string, contact: string, text: string): Promise<string | null> {

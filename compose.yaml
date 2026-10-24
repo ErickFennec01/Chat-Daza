@@ -18,7 +18,8 @@ services:
       proxy: {}
 
   waha:
-    image: devlikeapro/waha:latest-2026.8.2
+    # Versão fixada: evita mudanças não revisadas em um conector de WhatsApp.
+    image: devlikeapro/waha:latest-2026.9.2
     restart: unless-stopped
     environment:
       WAHA_API_KEY: ${WAHA_API_KEY}

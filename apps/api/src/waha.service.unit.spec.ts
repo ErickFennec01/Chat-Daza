@@ -42,4 +42,12 @@ describe('WahaService', () => {
 
     await assert.rejects(() => new WahaService().sendText('empresa-suporte', '123', 'Olá'), { message: 'Contato WhatsApp inválido para entrega WAHA' });
   });
+
+  it('traduz os estados do WAHA sem revelar dados da conta vinculada', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ status: 'WORKING', me: { id: '5511999999999@c.us' } }), { status: 200 })) as typeof fetch;
+
+    const status = await new WahaService().getSessionStatus('empresa-suporte');
+
+    assert.deepEqual(status, { estado: 'conectado', statusWaha: 'WORKING' });
+  });
 });

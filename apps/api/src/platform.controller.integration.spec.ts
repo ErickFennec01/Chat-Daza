@@ -19,6 +19,7 @@ describe('API HTTP: validação e autorização', () => {
       upsertAgent: async (tenant: string) => { agentWrites += 1; return { id: '33333333-3333-4333-8333-333333333333', empresaId: tenant }; },
       health: async () => ({ status: 'ok' }),
       resolveWahaChannel: async () => null,
+      getWhatsAppChannelStatus: async () => ({ sessao: 'empresa-suporte', estado: 'aguardando_qr', statusWaha: 'SCAN_QR_CODE' }),
     };
     const auth = {
       verifySession: (token: string) => {
@@ -63,5 +64,10 @@ describe('API HTTP: validação e autorização', () => {
     assert.equal(response.status, 201);
     assert.equal((await response.json()).empresaId, empresaId);
     assert.equal(agentWrites, 1);
+  });
+
+  it('não permite que operador consulte estado operacional do canal', async () => {
+    const response = await fetch(`${baseUrl}/v1/canais/whatsapp/33333333-3333-4333-8333-333333333333/status`, { headers: { authorization: 'Bearer operador' } });
+    assert.equal(response.status, 403);
   });
 });

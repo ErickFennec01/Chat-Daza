@@ -171,6 +171,15 @@ export class AppService {
     return { sessao: channel.sessao_waha, qrDataUrl: await this.waha.getQrDataUrl(channel.sessao_waha) };
   }
 
+  async getWhatsAppChannelStatus(empresaId: string, id: string) {
+    const channel = await this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query<{ sessao_waha: string }>("select sessao_waha from atendimento.canais_whatsapp where id=$1 and empresa_id=$2 and provedor='waha' and ativo", [id, empresaId]);
+      if (!result.rows[0]?.sessao_waha) throw new NotFoundException('Canal WAHA ativo não encontrado');
+      return result.rows[0];
+    });
+    return { sessao: channel.sessao_waha, ...(await this.waha.getSessionStatus(channel.sessao_waha)) };
+  }
+
   async listUnknownQuestions(empresaId: string) {
     return this.withTenantRows(empresaId, 'select id, conversa_id, pergunta, motivo, status, resposta_curada, created_at from atendimento.perguntas_sem_resposta order by created_at desc');
   }

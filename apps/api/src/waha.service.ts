@@ -1,6 +1,12 @@
 import { BadGatewayException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 type WahaReply = { id?: string; key?: { id?: string }; data?: string };
+type WahaSessionReply = { status?: string; me?: { id?: string; user?: string } };
+
+export type WahaSessionStatus = {
+  estado: 'conectado' | 'aguardando_qr' | 'conectando' | 'desconectado' | 'indisponivel';
+  statusWaha: string | null;
+};
 
 @Injectable()
 export class WahaService {
@@ -23,6 +29,17 @@ export class WahaService {
       if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1_500));
     }
     throw new BadGatewayException('WAHA ainda está preparando o QR Code. Aguarde alguns segundos e tente novamente.');
+  }
+
+  async getSessionStatus(session: string): Promise<WahaSessionStatus> {
+    const response = await this.request(`/api/sessions/${encodeURIComponent(session)}`, {}, [200, 404]);
+    if (response.status === 404) return { estado: 'indisponivel', statusWaha: null };
+    const body = await response.json().catch(() => ({})) as WahaSessionReply;
+    const status = body.status ?? null;
+    if (status === 'WORKING') return { estado: 'conectado', statusWaha: status };
+    if (status === 'SCAN_QR_CODE') return { estado: 'aguardando_qr', statusWaha: status };
+    if (status === 'STARTING') return { estado: 'conectando', statusWaha: status };
+    return { estado: 'desconectado', statusWaha: status };
   }
 
   async sendText(session: string, contact: string, text: string): Promise<string | null> {

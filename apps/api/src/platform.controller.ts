@@ -165,6 +165,13 @@ export class AppController {
     return this.service.connectWhatsAppChannel(request.empresaId!, id);
   }
 
+  @UseGuards(TenantGuard)
+  @Get('canais/whatsapp/:id/status')
+  getWhatsAppChannelStatus(@Req() request: TenantRequest, @Param('id') id: string) {
+    requirePanelAdmin(request);
+    return this.service.getWhatsAppChannelStatus(request.empresaId!, id);
+  }
+
   @Post('webhooks/waha/whatsapp')
   @HttpCode(200)
   async receiveWahaWebhook(@Headers('x-daza-waha-webhook') key: string | undefined, @Body() payload: WahaPayload) {

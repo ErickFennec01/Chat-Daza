@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Logger, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
 import { AgentDecisionDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, UpdateDocumentoDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
@@ -9,11 +9,12 @@ import { AuthService } from './auth.service';
 type MetaPayload = {
   entry?: Array<{ changes?: Array<{ value?: { metadata?: { phone_number_id?: string }; messages?: Array<{ id?: string; from?: string; text?: { body?: string } }> } }> }>;
 };
-type WahaPayload = { event?: string; session?: string; payload?: { id?: string; from?: string; body?: string; fromMe?: boolean } };
+type WahaPayload = { event?: string; session?: string; payload?: { id?: string; from?: string; body?: string; fromMe?: boolean | 'true' | 'false' } };
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 
 @Controller()
 export class AppController {
+  private readonly logger = new Logger(AppController.name);
   constructor(private readonly service: AppService, private readonly auth: AuthService) {}
 
   @Get('healthz')
@@ -178,12 +179,19 @@ export class AppController {
     this.assertWahaWebhookKey(key);
     const body = payload.payload?.body?.trim();
     const from = payload.payload?.from ?? '';
-    if (payload.event !== 'message' || payload.payload?.fromMe || !payload.session || !payload.payload?.id || !body || !/^[0-9]+@(c\.us|s\.whatsapp\.net|lid)$/.test(from)) return { recebido: true, ignorado: true };
-    const channel = await this.service.resolveWahaChannel(payload.session);
-    if (!channel) return { recebido: true, ignorado: true };
+    const ignoreReason = this.wahaIgnoreReason(payload, body, from);
+    if (ignoreReason) {
+      this.logger.warn(`Evento WAHA ignorado: ${ignoreReason}`);
+      return { recebido: true, ignorado: true };
+    }
+    const channel = await this.service.resolveWahaChannel(payload.session!);
+    if (!channel) {
+      this.logger.warn('Evento WAHA ignorado: canal_inexistente');
+      return { recebido: true, ignorado: true };
+    }
     const remetente = from.replace(/@s\.whatsapp\.net$/, '@c.us');
     void this.dispatchToN8n({
-      canal: 'whatsapp', destinatario: payload.session, remetente, id_externo: payload.payload.id, mensagem: body,
+      canal: 'whatsapp', destinatario: payload.session!, remetente, id_externo: payload.payload!.id!, mensagem: body!,
       metadados: { canal_id: channel.canal_id, agente_id: channel.agente_id, provedor: 'waha' },
     });
     return { recebido: true };
@@ -237,6 +245,16 @@ export class AppController {
   private assertWahaWebhookKey(received: string | undefined) {
     const expected = process.env.WAHA_WEBHOOK_SECRET;
     if (!expected || !received || expected.length !== received.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(received))) throw new UnauthorizedException('Webhook WAHA inválido');
+  }
+
+  private wahaIgnoreReason(payload: WahaPayload, body: string | undefined, from: string): string | null {
+    if (payload.event !== 'message') return 'evento_nao_suportado';
+    if (payload.payload?.fromMe === true || payload.payload?.fromMe === 'true') return 'mensagem_propria';
+    if (!payload.session) return 'sessao_ausente';
+    if (!payload.payload?.id) return 'id_externo_ausente';
+    if (!body) return 'texto_ausente';
+    if (!/^[0-9]+@(c\.us|s\.whatsapp\.net|lid)$/.test(from)) return `origem_invalida:${from.includes('@') ? from.slice(from.lastIndexOf('@')) : 'ausente'}`;
+    return null;
   }
 
   private extractMetaEvents(payload: MetaPayload) {

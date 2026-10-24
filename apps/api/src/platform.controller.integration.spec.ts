@@ -83,4 +83,15 @@ describe('API HTTP: validação e autorização', () => {
     assert.equal(response.status, 200);
     assert.deepEqual(resolvedWahaSessions, ['empresa-suporte']);
   });
+
+  it('aceita fromMe textual falso sem tratar a mensagem recebida como própria', async () => {
+    resolvedWahaSessions = [];
+    const response = await fetch(`${baseUrl}/v1/webhooks/waha/whatsapp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-daza-waha-webhook': 'webhook-test-secret' },
+      body: JSON.stringify({ event: 'message', session: 'empresa-suporte', payload: { id: 'false_123@lid_DEF', from: '123456789@lid', body: 'Teste', fromMe: 'false' } }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(resolvedWahaSessions, ['empresa-suporte']);
+  });
 });

@@ -43,14 +43,23 @@ export class WahaService {
   }
 
   async sendText(session: string, contact: string, text: string): Promise<string | null> {
-    const digits = contact.replace(/\D/g, '');
-    if (digits.length < 8) throw new BadGatewayException('Contato WhatsApp inválido para entrega WAHA');
+    const chatId = this.toChatId(contact);
     const response = await this.request('/api/sendText', {
       method: 'POST',
-      body: JSON.stringify({ session, chatId: `${digits}@c.us`, text }),
+      body: JSON.stringify({ session, chatId, text }),
     }, [200, 201]);
     const body = await response.json().catch(() => ({})) as WahaReply;
     return body.id ?? body.key?.id ?? null;
+  }
+
+  private toChatId(contact: string): string {
+    const value = contact.trim();
+    if (/^[0-9]+@lid$/.test(value)) return value;
+    if (/^[0-9]+@c\.us$/.test(value)) return value;
+    if (/^[0-9]+@s\.whatsapp\.net$/.test(value)) return value.replace(/@s\.whatsapp\.net$/, '@c.us');
+    const digits = value.replace(/\D/g, '');
+    if (digits.length >= 8) return `${digits}@c.us`;
+    throw new BadGatewayException('Contato WhatsApp inválido para entrega WAHA');
   }
 
   private async request(path: string, init: RequestInit, accepted: number[]) {

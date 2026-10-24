@@ -43,6 +43,18 @@ describe('WahaService', () => {
     await assert.rejects(() => new WahaService().sendText('empresa-suporte', '123', 'Olá'), { message: 'Contato WhatsApp inválido para entrega WAHA' });
   });
 
+  it('preserva identificador LID para responder no mesmo chat privado', async () => {
+    let request: { body: unknown } | undefined;
+    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+      request = { body: JSON.parse(String(init?.body)) };
+      return new Response(JSON.stringify({ id: 'provider-id' }), { status: 200 });
+    }) as typeof fetch;
+
+    await new WahaService().sendText('empresa-suporte', '123456789@lid', 'Olá');
+
+    assert.deepEqual(request?.body, { session: 'empresa-suporte', chatId: '123456789@lid', text: 'Olá' });
+  });
+
   it('traduz os estados do WAHA sem revelar dados da conta vinculada', async () => {
     globalThis.fetch = (async () => new Response(JSON.stringify({ status: 'WORKING', me: { id: '5511999999999@c.us' } }), { status: 200 })) as typeof fetch;
 

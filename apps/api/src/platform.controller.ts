@@ -178,10 +178,10 @@ export class AppController {
     this.assertWahaWebhookKey(key);
     const body = payload.payload?.body?.trim();
     const from = payload.payload?.from ?? '';
-    if (payload.event !== 'message' || payload.payload?.fromMe || !payload.session || !payload.payload?.id || !body || !/^[0-9]+@(c\.us|s\.whatsapp\.net)$/.test(from)) return { recebido: true, ignorado: true };
+    if (payload.event !== 'message' || payload.payload?.fromMe || !payload.session || !payload.payload?.id || !body || !/^[0-9]+@(c\.us|s\.whatsapp\.net|lid)$/.test(from)) return { recebido: true, ignorado: true };
     const channel = await this.service.resolveWahaChannel(payload.session);
     if (!channel) return { recebido: true, ignorado: true };
-    const remetente = from.replace(/@(c\.us|s\.whatsapp\.net)$/, '');
+    const remetente = from.replace(/@s\.whatsapp\.net$/, '@c.us');
     void this.dispatchToN8n({
       canal: 'whatsapp', destinatario: payload.session, remetente, id_externo: payload.payload.id, mensagem: body,
       metadados: { canal_id: channel.canal_id, agente_id: channel.agente_id, provedor: 'waha' },

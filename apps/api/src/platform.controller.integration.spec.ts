@@ -12,13 +12,14 @@ const empresaId = '11111111-1111-4111-8111-111111111111';
 let baseUrl = '';
 let app: INestApplication;
 let agentWrites = 0;
+let resolvedWahaSessions: string[] = [];
 
 describe('API HTTP: validação e autorização', () => {
   before(async () => {
     const service = {
       upsertAgent: async (tenant: string) => { agentWrites += 1; return { id: '33333333-3333-4333-8333-333333333333', empresaId: tenant }; },
       health: async () => ({ status: 'ok' }),
-      resolveWahaChannel: async () => null,
+      resolveWahaChannel: async (session: string) => { resolvedWahaSessions.push(session); return { canal_id: '44444444-4444-4444-8444-444444444444', agente_id: '33333333-3333-4333-8333-333333333333' }; },
       getWhatsAppChannelStatus: async () => ({ sessao: 'empresa-suporte', estado: 'aguardando_qr', statusWaha: 'SCAN_QR_CODE' }),
     };
     const auth = {
@@ -36,6 +37,7 @@ describe('API HTTP: validação e autorização', () => {
     app = module.createNestApplication();
     app.setGlobalPrefix('v1');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+    process.env.WAHA_WEBHOOK_SECRET = 'webhook-test-secret';
     await app.listen(0, '127.0.0.1');
     baseUrl = await app.getUrl();
   });
@@ -69,5 +71,16 @@ describe('API HTTP: validação e autorização', () => {
   it('não permite que operador consulte estado operacional do canal', async () => {
     const response = await fetch(`${baseUrl}/v1/canais/whatsapp/33333333-3333-4333-8333-333333333333/status`, { headers: { authorization: 'Bearer operador' } });
     assert.equal(response.status, 403);
+  });
+
+  it('aceita identificador LID de mensagem recebida e resolve o canal', async () => {
+    resolvedWahaSessions = [];
+    const response = await fetch(`${baseUrl}/v1/webhooks/waha/whatsapp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-daza-waha-webhook': 'webhook-test-secret' },
+      body: JSON.stringify({ event: 'message', session: 'empresa-suporte', payload: { id: 'false_123@lid_ABC', from: '123456789@lid', body: 'Olá', fromMe: false } }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(resolvedWahaSessions, ['empresa-suporte']);
   });
 });

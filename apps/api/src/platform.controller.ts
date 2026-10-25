@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, Logger, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
-import { AgentDecisionDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, SendHumanMessageDto, UpdateDocumentoDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
+import { AgentDecisionDto, CloseConversationDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, SendHumanMessageDto, UpdateDocumentoDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
 import { AppService } from './platform.service';
 import { requireAdminKey, requireInternalKey, requirePanelAdmin, TenantGuard, TenantRequest } from './tenant.guard';
 import { AuthService } from './auth.service';
@@ -135,6 +135,13 @@ export class AppController {
   sendHumanMessage(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: SendHumanMessageDto) {
     if (!request.session) throw new UnauthorizedException('Ação disponível apenas para usuários do painel');
     return this.service.sendHumanMessage(request.empresaId!, id, request.session.usuarioId, input.conteudo);
+  }
+
+  @UseGuards(TenantGuard)
+  @Post('conversas/:id/encerrar')
+  closeConversation(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: CloseConversationDto) {
+    if (!request.session) throw new UnauthorizedException('Ação disponível apenas para usuários do painel');
+    return this.service.closeConversation(request.empresaId!, id, request.session.usuarioId, request.session.papel === 'admin', input.resumoFinal);
   }
 
   @UseGuards(TenantGuard)

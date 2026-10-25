@@ -314,6 +314,24 @@ export class AppService {
     return { aceita: true, entregaId: delivery.id, statusEntrega: await this.deliverWhatsAppMessage(empresaId, delivery.id) };
   }
 
+  async closeConversation(empresaId: string, conversaId: string, usuarioId: string, isAdmin: boolean, resumoFinal?: string) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const eligible = await client.query<{ id: string }>(
+        `select id
+           from atendimento.conversas
+          where id=$1 and empresa_id=$2 and status in ('aberta', 'aguardando_humano')
+            and ($3::boolean or atendida_por_usuario_id=$4::uuid)`,
+        [conversaId, empresaId, isAdmin, usuarioId],
+      );
+      if (!eligible.rows[0]) throw new NotFoundException('Conversa não encontrada, já encerrada ou não atribuída a você');
+      await client.query(
+        "select atendimento.finalizar_conversa($1::uuid, $2::uuid, 'encerrada', $3::text, 'encerrada_por_humano')",
+        [empresaId, conversaId, resumoFinal?.trim() || null],
+      );
+      return { id: conversaId, status: 'encerrada' as const };
+    });
+  }
+
   async resolveWhatsAppChannel(phoneNumberId: string) {
     const result = await this.db.query<{ empresa_id: string; canal_id: string; agente_id: string; provedor: string }>(
       'select * from atendimento.resolver_canal_whatsapp($1)', [phoneNumberId],

@@ -83,4 +83,24 @@ describe('AppService canais WAHA', () => {
     assert.equal(queries[0].values[2], usuarioId);
     assert.equal(queries.some((query) => query.values.includes(`humano:${usuarioId}`)), true);
   });
+
+  it('encerra somente conversa humana atribuída ao operador', async () => {
+    const queries: Array<{ text: string; values: unknown[] }> = [];
+    const client = {
+      query: async (text: string, values: unknown[] = []) => {
+        queries.push({ text, values });
+        if (text.includes("status in ('aberta', 'aguardando_humano')")) return { rows: [{ id: '66666666-6666-4666-8666-666666666666' }] };
+        return { rows: [] };
+      },
+    };
+    const db = { withTenant: async (_tenant: string, operation: (value: typeof client) => Promise<unknown>) => operation(client) };
+    const service = new AppService(db as never, {} as never, {} as never);
+
+    const result = await service.closeConversation(empresaId, '66666666-6666-4666-8666-666666666666', '77777777-7777-4777-8777-777777777777', false, 'Atendimento concluído pelo time.');
+
+    assert.equal(result.status, 'encerrada');
+    assert.equal(queries[0].values[2], false);
+    assert.equal(queries[0].values[3], '77777777-7777-4777-8777-777777777777');
+    assert.equal(queries.some((query) => query.text.includes("'encerrada'")), true);
+  });
 });

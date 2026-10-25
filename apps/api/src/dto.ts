@@ -74,6 +74,10 @@ export class SendHumanMessageDto {
   @IsString() @Length(1, 8000) conteudo!: string;
 }
 
+export class CloseConversationDto {
+  @IsOptional() @IsString() @Length(1, 2000) resumoFinal?: string;
+}
+
 export class CreateWhatsAppChannelDto {
   @IsUUID() agenteId!: string;
   @IsString() @Matches(/^[a-z0-9][a-z0-9-]{2,79}$/) sessao!: string;

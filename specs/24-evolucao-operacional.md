@@ -13,7 +13,8 @@
 - Todo dado é isolado por `empresa_id`; a empresa vem da sessão ou da integração autenticada.
 - A conversa é a fonte do histórico. Não se apaga mensagem, entrega ou auditoria.
 - A IA responde enquanto a conversa estiver `aberta`. Uma conversa assumida ou transferida fica `aguardando_humano`.
-- Após `encerrada` ou `resolvida`, mensagem do cliente reabre a mesma conversa apenas dentro da janela configurada; fora dela inicia outra conversa.
+- Após `encerrada` ou `resolvida`, a política padrão inicia outra conversa para a próxima mensagem do cliente. A reabertura do mesmo histórico é opt-in, por uma janela configurada pela empresa.
+- Uma conversa em `aguardando_humano` permanece exclusivamente na fila humana até ser encerrada; a IA não recebe o seu histórico nem gera resposta.
 - Ação humana sensível deve registrar auditoria com usuário, tipo e detalhes mínimos.
 
 ## Fora deste incremento

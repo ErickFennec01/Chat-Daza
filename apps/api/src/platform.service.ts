@@ -223,7 +223,7 @@ export class AppService {
     return this.db.withTenant(empresaId, async (client) => {
       const result = await client.query(
         `insert into atendimento.politicas_atendimento (empresa_id, janela_reabertura_minutos, sla_primeira_resposta_minutos)
-         values ($1, coalesce($2, 1440), coalesce($3, 15))
+         values ($1, coalesce($2, 0), coalesce($3, 15))
          on conflict (empresa_id) do update set
            janela_reabertura_minutos=coalesce($2, atendimento.politicas_atendimento.janela_reabertura_minutos),
            sla_primeira_resposta_minutos=coalesce($3, atendimento.politicas_atendimento.sla_primeira_resposta_minutos), atualizado_em=now()

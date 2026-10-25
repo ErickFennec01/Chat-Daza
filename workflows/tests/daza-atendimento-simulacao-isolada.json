@@ -1,0 +1,56 @@
+{
+  "id": "dazaAtendimentoSimulation01",
+  "name": "DAZA Atendimento — Simulação isolada",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "id": "sim-01",
+      "name": "01 — Iniciar simulação",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 300],
+      "parameters": {}
+    },
+    {
+      "id": "sim-02",
+      "name": "02 — Cenários sintéticos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const base = { canal: 'whatsapp', destinatario: 'sessao-simulada', remetente: '10000000000@c.us', mensagem: 'Olá, gostaria de conhecer os serviços.', metadados: { canal_id: '11111111-1111-4111-8111-111111111111', agente_id: '22222222-2222-4222-8222-222222222222' } };\nreturn [\n  { json: { cenario: 'válido', ...base, id_externo: 'sim-001' } },\n  { json: { cenario: 'duplicado', ...base, id_externo: 'sim-001' } },\n  { json: { cenario: 'inválido', canal: 'whatsapp', id_externo: 'sim-002' } }\n];"
+      }
+    },
+    {
+      "id": "sim-03",
+      "name": "03 — Validar, deduplicar e decidir",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [540, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const seen = new Set();\nconst required = ['canal', 'destinatario', 'remetente', 'id_externo', 'mensagem'];\nreturn $input.all().map(({ json: event }) => {\n  const invalid = required.find((field) => typeof event[field] !== 'string' || !event[field].trim());\n  if (invalid) return { json: { cenario: event.cenario, aceito: false, motivo: `${invalid} é obrigatório`, entrega_externa: false } };\n  if (seen.has(event.id_externo)) return { json: { cenario: event.cenario, aceito: false, duplicado: true, motivo: 'Evento duplicado no lote', entrega_externa: false } };\n  seen.add(event.id_externo);\n  return { json: { cenario: event.cenario, aceito: true, duplicado: false, rag: 'cache ausente; contexto simulado', acao: 'responder', resposta_simulada: 'Olá! Posso ajudar com informações sobre nossos serviços.', entrega_externa: false } };\n});"
+      }
+    },
+    {
+      "id": "sim-04",
+      "name": "04 — Resumo seguro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [820, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const results = $input.all().map((item) => item.json);\nreturn [{ json: { total: results.length, aceitos: results.filter((item) => item.aceito).length, duplicados: results.filter((item) => item.duplicado).length, rejeitados: results.filter((item) => !item.aceito && !item.duplicado).length, entrega_externa: false, resultados: results } }];"
+      }
+    }
+  ],
+  "connections": {
+    "01 — Iniciar simulação": { "main": [[{ "node": "02 — Cenários sintéticos", "type": "main", "index": 0 }]] },
+    "02 — Cenários sintéticos": { "main": [[{ "node": "03 — Validar, deduplicar e decidir", "type": "main", "index": 0 }]] },
+    "03 — Validar, deduplicar e decidir": { "main": [[{ "node": "04 — Resumo seguro", "type": "main", "index": 0 }]] }
+  }
+}

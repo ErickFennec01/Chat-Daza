@@ -14,6 +14,7 @@ let app: INestApplication;
 let controller: AppController;
 let agentWrites = 0;
 let resolvedWahaSessions: string[] = [];
+let humanMessages: Array<{ tenant: string; conversationId: string; usuarioId: string; conteudo: string }> = [];
 
 describe('API HTTP: validação e autorização', () => {
   before(async () => {
@@ -22,6 +23,7 @@ describe('API HTTP: validação e autorização', () => {
       health: async () => ({ status: 'ok' }),
       resolveWahaChannel: async (session: string) => { resolvedWahaSessions.push(session); return { canal_id: '44444444-4444-4444-8444-444444444444', agente_id: '33333333-3333-4333-8333-333333333333' }; },
       getWhatsAppChannelStatus: async () => ({ sessao: 'empresa-suporte', estado: 'aguardando_qr', statusWaha: 'SCAN_QR_CODE' }),
+      sendHumanMessage: async (tenant: string, conversationId: string, usuarioId: string, conteudo: string) => { humanMessages.push({ tenant, conversationId, usuarioId, conteudo }); return { aceita: true, statusEntrega: 'enviada' }; },
     };
     const auth = {
       verifySession: (token: string) => {
@@ -68,6 +70,24 @@ describe('API HTTP: validação e autorização', () => {
     assert.equal(response.status, 201);
     assert.equal((await response.json()).empresaId, empresaId);
     assert.equal(agentWrites, 1);
+  });
+
+  it('envia mensagem humana com a identidade da sessão, nunca do payload', async () => {
+    humanMessages = [];
+    const response = await fetch(`${baseUrl}/v1/conversas/33333333-3333-4333-8333-333333333333/mensagens`, { method: 'POST', headers: { authorization: 'Bearer operador', 'content-type': 'application/json' }, body: JSON.stringify({ conteudo: 'Mensagem do atendente' }) });
+    assert.equal(response.status, 201);
+    assert.deepEqual(humanMessages, [{ tenant: empresaId, conversationId: '33333333-3333-4333-8333-333333333333', usuarioId: 'u-operador', conteudo: 'Mensagem do atendente' }]);
+
+    const forged = await fetch(`${baseUrl}/v1/conversas/33333333-3333-4333-8333-333333333333/mensagens`, { method: 'POST', headers: { authorization: 'Bearer operador', 'content-type': 'application/json' }, body: JSON.stringify({ conteudo: 'Tentativa inválida', usuarioId: 'tentativa-de-forjar-operador' }) });
+    assert.equal(forged.status, 400);
+    assert.equal(humanMessages.length, 1);
+  });
+
+  it('rejeita mensagem humana vazia antes de acionar a entrega', async () => {
+    humanMessages = [];
+    const response = await fetch(`${baseUrl}/v1/conversas/33333333-3333-4333-8333-333333333333/mensagens`, { method: 'POST', headers: { authorization: 'Bearer operador', 'content-type': 'application/json' }, body: JSON.stringify({ conteudo: '' }) });
+    assert.equal(response.status, 400);
+    assert.equal(humanMessages.length, 0);
   });
 
   it('não permite que operador consulte estado operacional do canal', async () => {

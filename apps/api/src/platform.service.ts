@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHmac, randomBytes } from 'node:crypto';
 import { PoolClient } from 'pg';
 import { DatabaseService } from './database.service';
@@ -289,6 +289,29 @@ export class AppService {
     if (!delivery.canalConfigurado) return { aceita: true, entregaId: delivery.id, statusEntrega: 'falha', motivo: 'Canal WhatsApp não configurado para a conversa' };
     const statusEntrega = await this.deliverWhatsAppMessage(decision.empresaId, delivery.id);
     return { aceita: true, entregaId: delivery.id, statusEntrega };
+  }
+
+  async sendHumanMessage(empresaId: string, conversaId: string, usuarioId: string, conteudo: string) {
+    const mensagem = conteudo.trim();
+    if (!mensagem) throw new BadRequestException('A mensagem não pode ficar vazia');
+    const delivery = await this.db.withTenant(empresaId, async (client) => {
+      const conversation = await client.query<{ canal: string; contato_externo: string; canal_id: string | null }>(
+        "select canal, contato_externo, metadados->>'canal_id' as canal_id from atendimento.conversas where id=$1 and empresa_id=$2 and status='aguardando_humano' and atendida_por_usuario_id=$3",
+        [conversaId, empresaId, usuarioId],
+      );
+      if (!conversation.rows[0]) throw new NotFoundException('Conversa não está assumida por você');
+      const message = await client.query<{ mensagem_id: string }>('select atendimento.registrar_saida($1::uuid, $2::uuid, $3, $4) as mensagem_id', [empresaId, conversaId, mensagem, `humano:${usuarioId}`]);
+      const channel = await this.resolveOutgoingChannel(client, empresaId, conversation.rows[0].canal, conversation.rows[0].canal_id);
+      const queued = await client.query<{ id: string }>(
+        `insert into atendimento.entregas_mensagens (empresa_id, conversa_id, mensagem_id, canal_whatsapp_id, provedor, status, erro_codigo)
+         values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::text, case when $4::uuid is null then 'falha' else 'pendente' end, case when $4::uuid is null then 'CANAL_NAO_CONFIGURADO' else null end)
+         returning id`,
+        [empresaId, conversaId, message.rows[0].mensagem_id, channel?.id ?? null, channel?.provedor ?? 'waha'],
+      );
+      return { id: queued.rows[0].id, canalConfigurado: channel !== null };
+    });
+    if (!delivery.canalConfigurado) return { aceita: true, entregaId: delivery.id, statusEntrega: 'falha' as const };
+    return { aceita: true, entregaId: delivery.id, statusEntrega: await this.deliverWhatsAppMessage(empresaId, delivery.id) };
   }
 
   async resolveWhatsAppChannel(phoneNumberId: string) {

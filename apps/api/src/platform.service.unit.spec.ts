@@ -56,4 +56,31 @@ describe('AppService canais WAHA', () => {
     assert.equal(result.statusEntrega, 'enviada');
     assert.equal(queries.some((query) => query.includes('values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::text') && query.includes('case when $4::uuid is null')), true);
   });
+
+  it('envia resposta humana somente na conversa assumida pelo próprio usuário', async () => {
+    const queries: Array<{ text: string; values: unknown[] }> = [];
+    const conversaId = '66666666-6666-4666-8666-666666666666';
+    const usuarioId = '77777777-7777-4777-8777-777777777777';
+    const client = {
+      query: async (text: string, values: unknown[] = []) => {
+        queries.push({ text, values });
+        if (text.includes("status='aguardando_humano' and atendida_por_usuario_id=$3")) return { rows: [{ canal: 'whatsapp', contato_externo: '10000000000@c.us', canal_id: '44444444-4444-4444-8444-444444444444' }] };
+        if (text.includes('registrar_saida')) return { rows: [{ mensagem_id: '33333333-3333-4333-8333-333333333333' }] };
+        if (text.includes("select id, provedor from atendimento.canais_whatsapp where id")) return { rows: [{ id: '44444444-4444-4444-8444-444444444444', provedor: 'waha' }] };
+        if (text.includes('insert into atendimento.entregas_mensagens')) return { rows: [{ id: '55555555-5555-4555-8555-555555555555' }] };
+        if (text.includes("update atendimento.entregas_mensagens set status='processando'")) return { rows: [{ id: '55555555-5555-4555-8555-555555555555', canal_whatsapp_id: '44444444-4444-4444-8444-444444444444', conteudo: 'Olá, como posso ajudar?', contato_externo: '10000000000@c.us' }] };
+        if (text.includes('select sessao_waha')) return { rows: [{ sessao_waha: 'sessao-sintetica' }] };
+        return { rows: [] };
+      },
+    };
+    const db = { withTenant: async (_tenant: string, operation: (value: typeof client) => Promise<unknown>) => operation(client) };
+    const waha = { sendText: async () => 'provedor-sintetico' };
+    const service = new AppService(db as never, {} as never, waha as never);
+
+    const result = await service.sendHumanMessage(empresaId, conversaId, usuarioId, '  Olá, como posso ajudar?  ');
+
+    assert.equal(result.statusEntrega, 'enviada');
+    assert.equal(queries[0].values[2], usuarioId);
+    assert.equal(queries.some((query) => query.values.includes(`humano:${usuarioId}`)), true);
+  });
 });

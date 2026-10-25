@@ -70,6 +70,10 @@ export class ListConversationsQueryDto {
   @IsOptional() @Type(() => Number) @Min(1) @Max(100) limit?: number;
 }
 
+export class SendHumanMessageDto {
+  @IsString() @Length(1, 8000) conteudo!: string;
+}
+
 export class CreateWhatsAppChannelDto {
   @IsUUID() agenteId!: string;
   @IsString() @Matches(/^[a-z0-9][a-z0-9-]{2,79}$/) sessao!: string;

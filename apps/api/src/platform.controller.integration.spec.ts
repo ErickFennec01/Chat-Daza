@@ -11,6 +11,7 @@ import { TenantGuard } from './tenant.guard';
 const empresaId = '11111111-1111-4111-8111-111111111111';
 let baseUrl = '';
 let app: INestApplication;
+let controller: AppController;
 let agentWrites = 0;
 let resolvedWahaSessions: string[] = [];
 
@@ -34,6 +35,7 @@ describe('API HTTP: validação e autorização', () => {
       controllers: [AppController],
       providers: [TenantGuard, { provide: AppService, useValue: service }, { provide: AuthService, useValue: auth }, { provide: DatabaseService, useValue: { query: async () => ({ rows: [] }) } }],
     }).compile();
+    controller = module.get(AppController);
     app = module.createNestApplication();
     app.setGlobalPrefix('v1');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
@@ -93,5 +95,28 @@ describe('API HTTP: validação e autorização', () => {
     });
     assert.equal(response.status, 200);
     assert.deepEqual(resolvedWahaSessions, ['empresa-suporte']);
+  });
+
+  it('envia eventos internos ao n8n com a chave configurada', async () => {
+    const fetchOriginal = globalThis.fetch;
+    const urlOriginal = process.env.N8N_AGENT_WEBHOOK_URL;
+    const secretOriginal = process.env.N8N_WEBHOOK_SECRET;
+    let chamada: { url: string; chave: string | null } | undefined;
+    process.env.N8N_AGENT_WEBHOOK_URL = 'http://n8n.test/webhook/daza/atendimento/inbound';
+    process.env.N8N_WEBHOOK_SECRET = 'chave-interna-de-teste';
+    globalThis.fetch = (async (url, init) => {
+      chamada = { url: String(url), chave: new Headers(init?.headers).get('x-daza-internal-key') };
+      return new Response('', { status: 404 });
+    }) as typeof fetch;
+    try {
+      await (controller as unknown as { dispatchToN8n: (evento: Record<string, unknown>) => Promise<void> }).dispatchToN8n({ canal: 'whatsapp' });
+      assert.deepEqual(chamada, { url: 'http://n8n.test/webhook/daza/atendimento/inbound', chave: 'chave-interna-de-teste' });
+    } finally {
+      globalThis.fetch = fetchOriginal;
+      if (urlOriginal === undefined) delete process.env.N8N_AGENT_WEBHOOK_URL;
+      else process.env.N8N_AGENT_WEBHOOK_URL = urlOriginal;
+      if (secretOriginal === undefined) delete process.env.N8N_WEBHOOK_SECRET;
+      else process.env.N8N_WEBHOOK_SECRET = secretOriginal;
+    }
   });
 });

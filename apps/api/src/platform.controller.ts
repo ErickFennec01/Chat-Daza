@@ -275,9 +275,10 @@ export class AppController {
     const secret = process.env.N8N_WEBHOOK_SECRET;
     if (!url || !secret) return;
     try {
-      await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-daza-internal-key': secret }, body: JSON.stringify(event), signal: AbortSignal.timeout(15_000) });
+      const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-daza-internal-key': secret }, body: JSON.stringify(event), signal: AbortSignal.timeout(15_000) });
+      if (!response.ok) this.logger.error(`Entrega ao n8n rejeitada: http_${response.status}`);
     } catch {
-      // A persistência/idempotência é tratada no banco; telemetria de retry entra na próxima fase.
+      this.logger.error('Entrega ao n8n indisponível');
     }
   }
 }

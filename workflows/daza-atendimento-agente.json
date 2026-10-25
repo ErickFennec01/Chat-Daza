@@ -10,6 +10,7 @@
   "nodes": [
     {
       "id": "a0f87e9c-01dc-4a0a-9110-000000000001",
+      "webhookId": "bbf0289a-25be-4e97-9a00-11991675a001",
       "name": "01 — Webhook interno",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,

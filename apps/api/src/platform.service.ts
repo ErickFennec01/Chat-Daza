@@ -200,7 +200,11 @@ export class AppService {
   }
 
   async listUnknownQuestions(empresaId: string) {
-    return this.withTenantRows(empresaId, 'select id, conversa_id, pergunta, motivo, status, resposta_curada, created_at from atendimento.perguntas_sem_resposta order by created_at desc');
+    return this.withTenantRows(empresaId, `select p.id, p.conversa_id, p.pergunta, p.motivo, p.status, p.resposta_curada, p.created_at,
+      c.contato_externo, c.canal
+      from atendimento.perguntas_sem_resposta p
+      left join atendimento.conversas c on c.id=p.conversa_id and c.empresa_id=p.empresa_id
+      order by p.created_at desc`);
   }
 
   async getOperationPolicy(empresaId: string) {
@@ -352,9 +356,16 @@ export class AppService {
       );
       if (decision.acao === 'escalar') {
         await client.query('select atendimento.finalizar_conversa($1::uuid, $2::uuid, $3, $4, $5)', [decision.empresaId, decision.conversaId, 'aguardando_humano', decision.motivoEscalonamento ?? null, 'ia_escalou']);
+        const ultimaEntrada = await client.query<{ conteudo: string }>(
+          "select conteudo from atendimento.mensagens where empresa_id=$1 and conversa_id=$2 and direcao='entrada' order by created_at desc limit 1",
+          [decision.empresaId, decision.conversaId],
+        );
+        const pergunta = ultimaEntrada.rows[0]?.conteudo?.trim() || decision.motivoEscalonamento || decision.resposta;
         await client.query(
-          "insert into atendimento.perguntas_sem_resposta (empresa_id, conversa_id, pergunta, motivo) values ($1, $2, $3, 'escalonamento')",
-          [decision.empresaId, decision.conversaId, decision.motivoEscalonamento ?? decision.resposta],
+          `insert into atendimento.perguntas_sem_resposta (empresa_id, conversa_id, pergunta, motivo)
+           select $1, $2, $3, 'escalonamento'
+           where not exists (select 1 from atendimento.perguntas_sem_resposta where empresa_id=$1 and conversa_id=$2 and pergunta=$3 and status in ('aberta','em_revisao'))`,
+          [decision.empresaId, decision.conversaId, pergunta],
         );
       }
       return { id: queued.rows[0].id, canalConfigurado: channel !== null };

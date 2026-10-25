@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, Length, Matches, Max, Min, ValidateIf } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID, Length, Matches, Max, Min, ValidateIf } from 'class-validator';
 
 export class CreateEmpresaDto {
   @IsString() @Length(2, 240) razaoSocial!: string;
@@ -29,6 +29,14 @@ export class UpsertAgentDto {
   @Min(0) @Max(2) temperatura!: number;
   @Min(64) @Max(2000) limiteRespostaTokens!: number;
   @Min(0) @Max(1) limiarConfianca!: number;
+  @IsOptional() @IsBoolean() ativo?: boolean;
+  @IsOptional() @IsUUID() roteiroId?: string;
+}
+
+export class UpsertScriptDto {
+  @IsString() @Length(2, 120) nome!: string;
+  @IsOptional() @IsString() @Length(0, 2000) descricao?: string;
+  @IsArray() etapas!: Array<Record<string, unknown>>;
   @IsOptional() @IsBoolean() ativo?: boolean;
 }
 

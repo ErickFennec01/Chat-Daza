@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { createHmac, randomBytes } from 'node:crypto';
 import { PoolClient } from 'pg';
 import { DatabaseService } from './database.service';
-import { CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateUserDto, CreateWhatsAppChannelDto, ResolveQuestionDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
+import { CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateUserDto, CreateWhatsAppChannelDto, ResolveQuestionDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto, UpsertScriptDto } from './dto';
 import { AuthService } from './auth.service';
 import { ListConversationsQueryDto } from './dto';
 import { WahaService } from './waha.service';
@@ -55,15 +55,19 @@ export class AppService {
   }
 
   async listAgents(empresaId: string) {
-    return this.withTenantRows(empresaId, 'select id, nome, ativo, system_prompt, modelo, temperatura, limite_resposta_tokens, limiar_confianca, versao_conhecimento, updated_at from atendimento.agentes order by nome');
+    return this.withTenantRows(empresaId, 'select id, nome, ativo, system_prompt, modelo, temperatura, limite_resposta_tokens, limiar_confianca, versao_conhecimento, roteiro_id, updated_at from atendimento.agentes order by nome');
   }
 
   async upsertAgent(empresaId: string, input: UpsertAgentDto) {
     return this.db.withTenant(empresaId, async (client) => {
-      const params = [empresaId, input.nome.trim(), input.systemPrompt, input.modelo, input.temperatura, input.limiteRespostaTokens, input.limiarConfianca, input.ativo ?? true];
+      if (input.roteiroId) {
+        const roteiro = await client.query('select id from atendimento.roteiros_atendimento where id=$1 and empresa_id=$2 and ativo', [input.roteiroId, empresaId]);
+        if (!roteiro.rows[0]) throw new NotFoundException('Roteiro ativo não encontrado para a empresa');
+      }
+      const params = [empresaId, input.nome.trim(), input.systemPrompt, input.modelo, input.temperatura, input.limiteRespostaTokens, input.limiarConfianca, input.ativo ?? true, input.roteiroId ?? null];
       const query = input.id
-        ? 'update atendimento.agentes set nome=$2, system_prompt=$3, modelo=$4, temperatura=$5, limite_resposta_tokens=$6, limiar_confianca=$7, ativo=$8 where id=$9 and empresa_id=$1 returning *'
-        : 'insert into atendimento.agentes (empresa_id,nome,system_prompt,modelo,temperatura,limite_resposta_tokens,limiar_confianca,ativo) values ($1,$2,$3,$4,$5,$6,$7,$8) returning *';
+        ? 'update atendimento.agentes set nome=$2, system_prompt=$3, modelo=$4, temperatura=$5, limite_resposta_tokens=$6, limiar_confianca=$7, ativo=$8, roteiro_id=$9 where id=$10 and empresa_id=$1 returning *'
+        : 'insert into atendimento.agentes (empresa_id,nome,system_prompt,modelo,temperatura,limite_resposta_tokens,limiar_confianca,ativo,roteiro_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *';
       const result = await client.query(query, input.id ? [...params, input.id] : params);
       if (!result.rows[0]) throw new NotFoundException('Agente não encontrado');
       return result.rows[0];
@@ -83,6 +87,21 @@ export class AppService {
 
   async listDocuments(empresaId: string) {
     return this.withTenantRows(empresaId, 'select id, titulo, conteudo, fonte, ativo, updated_at from atendimento.documentos order by updated_at desc');
+  }
+
+  async listScripts(empresaId: string) {
+    return this.withTenantRows(empresaId, 'select id, nome, descricao, etapas, ativo, updated_at from atendimento.roteiros_atendimento order by updated_at desc');
+  }
+
+  async upsertScript(empresaId: string, input: UpsertScriptDto, id?: string) {
+    const etapas = this.normalizeScriptSteps(input.etapas);
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = id
+        ? await client.query('update atendimento.roteiros_atendimento set nome=$3, descricao=$4, etapas=$5::jsonb, ativo=$6 where id=$1 and empresa_id=$2 returning id,nome,descricao,etapas,ativo,updated_at', [id, empresaId, input.nome.trim(), input.descricao?.trim() ?? '', JSON.stringify(etapas), input.ativo ?? true])
+        : await client.query('insert into atendimento.roteiros_atendimento (empresa_id,nome,descricao,etapas,ativo) values ($1,$2,$3,$4::jsonb,$5) returning id,nome,descricao,etapas,ativo,updated_at', [empresaId, input.nome.trim(), input.descricao?.trim() ?? '', JSON.stringify(etapas), input.ativo ?? true]);
+      if (!result.rows[0]) throw new NotFoundException('Roteiro não encontrado');
+      return result.rows[0];
+    });
   }
 
   async createDocument(empresaId: string, input: CreateDocumentoDto) {
@@ -400,6 +419,19 @@ export class AppService {
 
   private async withTenantRows(empresaId: string, text: string) {
     return this.db.withTenant(empresaId, async (client: PoolClient) => (await client.query(text)).rows);
+  }
+
+  private normalizeScriptSteps(etapas: Array<Record<string, unknown>>) {
+    if (!etapas.length || etapas.length > 30) throw new BadRequestException('O roteiro deve ter entre 1 e 30 etapas');
+    const ids = new Set<string>();
+    return etapas.map((etapa, index) => {
+      const titulo = typeof etapa.titulo === 'string' ? etapa.titulo.trim() : '';
+      const objetivo = typeof etapa.objetivo === 'string' ? etapa.objetivo.trim() : '';
+      const id = typeof etapa.id === 'string' && /^[a-z0-9-]{2,80}$/.test(etapa.id) ? etapa.id : `etapa-${index + 1}`;
+      if (!titulo || !objetivo || titulo.length > 160 || objetivo.length > 2000 || ids.has(id)) throw new BadRequestException('Cada etapa exige identificador único, título e objetivo');
+      ids.add(id);
+      return { id, titulo, objetivo, instrucoes: typeof etapa.instrucoes === 'string' ? etapa.instrucoes.trim() : '', criterios_avanco: typeof etapa.criterios_avanco === 'string' ? etapa.criterios_avanco.trim() : '', criterios_transferencia: typeof etapa.criterios_transferencia === 'string' ? etapa.criterios_transferencia.trim() : '' };
+    });
   }
 
   private async ensureAgentBelongsToTenant(client: PoolClient, empresaId: string, agentId: string) {

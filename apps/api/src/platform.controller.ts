@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, Logger, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
-import { AgentDecisionDto, CloseConversationDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, SendHumanMessageDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
+import { AgentDecisionDto, CloseConversationDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, SendHumanMessageDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto, UpsertScriptDto } from './dto';
 import { AppService } from './platform.service';
 import { requireAdminKey, requireInternalKey, requirePanelAdmin, TenantGuard, TenantRequest } from './tenant.guard';
 import { AuthService } from './auth.service';
@@ -74,6 +74,18 @@ export class AppController {
     requirePanelAdmin(request);
     return this.service.deactivateAgent(request.empresaId!, id);
   }
+
+  @UseGuards(TenantGuard)
+  @Get('roteiros')
+  listScripts(@Req() request: TenantRequest) { return this.service.listScripts(request.empresaId!); }
+
+  @UseGuards(TenantGuard)
+  @Post('roteiros')
+  createScript(@Req() request: TenantRequest, @Body() input: UpsertScriptDto) { requirePanelAdmin(request); return this.service.upsertScript(request.empresaId!, input); }
+
+  @UseGuards(TenantGuard)
+  @Patch('roteiros/:id')
+  updateScript(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: UpsertScriptDto) { requirePanelAdmin(request); return this.service.upsertScript(request.empresaId!, input, id); }
 
   @UseGuards(TenantGuard)
   @Get('conhecimento/documentos')

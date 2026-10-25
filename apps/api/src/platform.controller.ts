@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, Logger, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
-import { AgentDecisionDto, CloseConversationDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, SendHumanMessageDto, UpdateDocumentoDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
+import { AgentDecisionDto, CloseConversationDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, SendHumanMessageDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
 import { AppService } from './platform.service';
 import { requireAdminKey, requireInternalKey, requirePanelAdmin, TenantGuard, TenantRequest } from './tenant.guard';
 import { AuthService } from './auth.service';
@@ -143,6 +143,26 @@ export class AppController {
     if (!request.session) throw new UnauthorizedException('Ação disponível apenas para usuários do painel');
     return this.service.closeConversation(request.empresaId!, id, request.session.usuarioId, request.session.papel === 'admin', input.resumoFinal);
   }
+
+  @UseGuards(TenantGuard)
+  @Get('operacao/politica')
+  getOperationPolicy(@Req() request: TenantRequest) { requirePanelAdmin(request); return this.service.getOperationPolicy(request.empresaId!); }
+
+  @UseGuards(TenantGuard)
+  @Patch('operacao/politica')
+  updateOperationPolicy(@Req() request: TenantRequest, @Body() input: UpdateOperationPolicyDto) { requirePanelAdmin(request); return this.service.updateOperationPolicy(request.empresaId!, input); }
+
+  @UseGuards(TenantGuard)
+  @Get('operacao/filas')
+  listQueues(@Req() request: TenantRequest) { requirePanelAdmin(request); return this.service.listQueues(request.empresaId!); }
+
+  @UseGuards(TenantGuard)
+  @Post('operacao/filas')
+  createQueue(@Req() request: TenantRequest, @Body() input: CreateQueueDto) { requirePanelAdmin(request); return this.service.createQueue(request.empresaId!, input); }
+
+  @UseGuards(TenantGuard)
+  @Patch('operacao/filas/:id')
+  updateQueue(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: UpdateQueueDto) { requirePanelAdmin(request); return this.service.updateQueue(request.empresaId!, id, input); }
 
   @UseGuards(TenantGuard)
   @Get('metricas')

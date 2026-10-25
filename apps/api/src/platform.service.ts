@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { createHmac, randomBytes } from 'node:crypto';
 import { PoolClient } from 'pg';
 import { DatabaseService } from './database.service';
-import { CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateUserDto, CreateWhatsAppChannelDto, ResolveQuestionDto, UpdateDocumentoDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
+import { CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateUserDto, CreateWhatsAppChannelDto, ResolveQuestionDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto } from './dto';
 import { AuthService } from './auth.service';
 import { ListConversationsQueryDto } from './dto';
 import { WahaService } from './waha.service';
@@ -182,6 +182,60 @@ export class AppService {
 
   async listUnknownQuestions(empresaId: string) {
     return this.withTenantRows(empresaId, 'select id, conversa_id, pergunta, motivo, status, resposta_curada, created_at from atendimento.perguntas_sem_resposta order by created_at desc');
+  }
+
+  async getOperationPolicy(empresaId: string) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query(
+        `insert into atendimento.politicas_atendimento (empresa_id)
+         values ($1) on conflict (empresa_id) do update set atualizado_em=atendimento.politicas_atendimento.atualizado_em
+         returning janela_reabertura_minutos, sla_primeira_resposta_minutos, atualizado_em`,
+        [empresaId],
+      );
+      return result.rows[0];
+    });
+  }
+
+  async updateOperationPolicy(empresaId: string, input: UpdateOperationPolicyDto) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query(
+        `insert into atendimento.politicas_atendimento (empresa_id, janela_reabertura_minutos, sla_primeira_resposta_minutos)
+         values ($1, coalesce($2, 1440), coalesce($3, 15))
+         on conflict (empresa_id) do update set
+           janela_reabertura_minutos=coalesce($2, atendimento.politicas_atendimento.janela_reabertura_minutos),
+           sla_primeira_resposta_minutos=coalesce($3, atendimento.politicas_atendimento.sla_primeira_resposta_minutos), atualizado_em=now()
+         returning janela_reabertura_minutos, sla_primeira_resposta_minutos, atualizado_em`,
+        [empresaId, input.janelaReaberturaMinutos ?? null, input.slaPrimeiraRespostaMinutos ?? null],
+      );
+      return result.rows[0];
+    });
+  }
+
+  async listQueues(empresaId: string) {
+    return this.withTenantRows(empresaId, 'select id, nome, descricao, prioridade_padrao, sla_primeira_resposta_minutos, ativo, updated_at from atendimento.filas_atendimento order by ativo desc, nome');
+  }
+
+  async createQueue(empresaId: string, input: CreateQueueDto) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query(
+        `insert into atendimento.filas_atendimento (empresa_id, nome, descricao, prioridade_padrao, sla_primeira_resposta_minutos)
+         values ($1,$2,$3,$4,$5) returning id, nome, descricao, prioridade_padrao, sla_primeira_resposta_minutos, ativo, updated_at`,
+        [empresaId, input.nome.trim(), input.descricao?.trim() ?? '', input.prioridadePadrao ?? 3, input.slaPrimeiraRespostaMinutos ?? null],
+      );
+      return result.rows[0];
+    });
+  }
+
+  async updateQueue(empresaId: string, id: string, input: UpdateQueueDto) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query(
+        `update atendimento.filas_atendimento set nome=coalesce($3,nome), descricao=coalesce($4,descricao), prioridade_padrao=coalesce($5,prioridade_padrao), sla_primeira_resposta_minutos=coalesce($6,sla_primeira_resposta_minutos), ativo=coalesce($7,ativo)
+          where id=$1 and empresa_id=$2 returning id, nome, descricao, prioridade_padrao, sla_primeira_resposta_minutos, ativo, updated_at`,
+        [id, empresaId, input.nome?.trim() ?? null, input.descricao?.trim() ?? null, input.prioridadePadrao ?? null, input.slaPrimeiraRespostaMinutos ?? null, input.ativo ?? null],
+      );
+      if (!result.rows[0]) throw new NotFoundException('Fila de atendimento não encontrada');
+      return result.rows[0];
+    });
   }
 
   async listConversations(empresaId: string, query: ListConversationsQueryDto) {

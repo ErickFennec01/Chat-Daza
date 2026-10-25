@@ -78,6 +78,26 @@ export class CloseConversationDto {
   @IsOptional() @IsString() @Length(1, 2000) resumoFinal?: string;
 }
 
+export class UpdateOperationPolicyDto {
+  @IsOptional() @Type(() => Number) @Min(0) @Max(43200) janelaReaberturaMinutos?: number;
+  @IsOptional() @Type(() => Number) @Min(1) @Max(10080) slaPrimeiraRespostaMinutos?: number;
+}
+
+export class CreateQueueDto {
+  @IsString() @Length(2, 120) nome!: string;
+  @IsOptional() @IsString() @Length(0, 1000) descricao?: string;
+  @IsOptional() @Type(() => Number) @Min(1) @Max(5) prioridadePadrao?: number;
+  @IsOptional() @Type(() => Number) @Min(1) @Max(10080) slaPrimeiraRespostaMinutos?: number;
+}
+
+export class UpdateQueueDto {
+  @IsOptional() @IsString() @Length(2, 120) nome?: string;
+  @IsOptional() @IsString() @Length(0, 1000) descricao?: string;
+  @IsOptional() @Type(() => Number) @Min(1) @Max(5) prioridadePadrao?: number;
+  @IsOptional() @Type(() => Number) @Min(1) @Max(10080) slaPrimeiraRespostaMinutos?: number;
+  @IsOptional() @IsBoolean() ativo?: boolean;
+}
+
 export class CreateWhatsAppChannelDto {
   @IsUUID() agenteId!: string;
   @IsString() @Matches(/^[a-z0-9][a-z0-9-]{2,79}$/) sessao!: string;

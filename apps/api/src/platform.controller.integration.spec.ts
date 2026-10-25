@@ -16,6 +16,7 @@ let agentWrites = 0;
 let resolvedWahaSessions: string[] = [];
 let humanMessages: Array<{ tenant: string; conversationId: string; usuarioId: string; conteudo: string }> = [];
 let closedConversations: Array<{ tenant: string; conversationId: string; usuarioId: string; isAdmin: boolean; resumoFinal?: string }> = [];
+let operationPolicies: Array<{ tenant: string; janelaReaberturaMinutos?: number }> = [];
 
 describe('API HTTP: validação e autorização', () => {
   before(async () => {
@@ -26,6 +27,7 @@ describe('API HTTP: validação e autorização', () => {
       getWhatsAppChannelStatus: async () => ({ sessao: 'empresa-suporte', estado: 'aguardando_qr', statusWaha: 'SCAN_QR_CODE' }),
       sendHumanMessage: async (tenant: string, conversationId: string, usuarioId: string, conteudo: string) => { humanMessages.push({ tenant, conversationId, usuarioId, conteudo }); return { aceita: true, statusEntrega: 'enviada' }; },
       closeConversation: async (tenant: string, conversationId: string, usuarioId: string, isAdmin: boolean, resumoFinal?: string) => { closedConversations.push({ tenant, conversationId, usuarioId, isAdmin, resumoFinal }); return { id: conversationId, status: 'encerrada' }; },
+      updateOperationPolicy: async (tenant: string, input: { janelaReaberturaMinutos?: number }) => { operationPolicies.push({ tenant, ...input }); return { janela_reabertura_minutos: input.janelaReaberturaMinutos ?? 1440, sla_primeira_resposta_minutos: 15 }; },
     };
     const auth = {
       verifySession: (token: string) => {
@@ -97,6 +99,15 @@ describe('API HTTP: validação e autorização', () => {
     const response = await fetch(`${baseUrl}/v1/conversas/33333333-3333-4333-8333-333333333333/encerrar`, { method: 'POST', headers: { authorization: 'Bearer operador', 'content-type': 'application/json' }, body: JSON.stringify({ resumoFinal: 'Solicitação concluída.' }) });
     assert.equal(response.status, 201);
     assert.deepEqual(closedConversations, [{ tenant: empresaId, conversationId: '33333333-3333-4333-8333-333333333333', usuarioId: 'u-operador', isAdmin: false, resumoFinal: 'Solicitação concluída.' }]);
+  });
+
+  it('limita política operacional a administradores e ao tenant da sessão', async () => {
+    operationPolicies = [];
+    const denied = await fetch(`${baseUrl}/v1/operacao/politica`, { method: 'PATCH', headers: { authorization: 'Bearer operador', 'content-type': 'application/json' }, body: JSON.stringify({ janelaReaberturaMinutos: 60 }) });
+    assert.equal(denied.status, 403);
+    const accepted = await fetch(`${baseUrl}/v1/operacao/politica`, { method: 'PATCH', headers: { authorization: 'Bearer admin', 'content-type': 'application/json' }, body: JSON.stringify({ janelaReaberturaMinutos: 60 }) });
+    assert.equal(accepted.status, 200);
+    assert.deepEqual(operationPolicies, [{ tenant: empresaId, janelaReaberturaMinutos: 60, slaPrimeiraRespostaMinutos: undefined }]);
   });
 
   it('não permite que operador consulte estado operacional do canal', async () => {

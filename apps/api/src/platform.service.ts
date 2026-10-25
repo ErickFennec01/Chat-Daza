@@ -85,6 +85,21 @@ export class AppService {
     });
   }
 
+  async assignAgentScript(empresaId: string, agentId: string, roteiroId: string | null) {
+    return this.db.withTenant(empresaId, async (client) => {
+      if (roteiroId) {
+        const roteiro = await client.query('select id from atendimento.roteiros_atendimento where id=$1 and empresa_id=$2 and ativo', [roteiroId, empresaId]);
+        if (!roteiro.rows[0]) throw new NotFoundException('Roteiro ativo não encontrado para a empresa');
+      }
+      const result = await client.query(
+        'update atendimento.agentes set roteiro_id=$3 where id=$1 and empresa_id=$2 returning id, nome, roteiro_id, updated_at',
+        [agentId, empresaId, roteiroId],
+      );
+      if (!result.rows[0]) throw new NotFoundException('Agente não encontrado para a empresa');
+      return result.rows[0];
+    });
+  }
+
   async listDocuments(empresaId: string) {
     return this.withTenantRows(empresaId, 'select id, titulo, conteudo, fonte, ativo, updated_at from atendimento.documentos order by updated_at desc');
   }

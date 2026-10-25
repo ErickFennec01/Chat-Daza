@@ -33,6 +33,27 @@ describe('AppService canais WAHA', () => {
     await assert.rejects(() => service.createWhatsAppChannel(empresaId, { agenteId, sessao: 'empresa-suporte' }), { message: 'Agente ativo não encontrado para a empresa' });
   });
 
+  it('associa roteiro ativo somente ao agente da empresa autenticada', async () => {
+    const queries: Array<{ text: string; values: unknown[] }> = [];
+    const roteiroId = '33333333-3333-4333-8333-333333333333';
+    const client = {
+      query: async (text: string, values: unknown[] = []) => {
+        queries.push({ text, values });
+        if (text.includes('from atendimento.roteiros_atendimento')) return { rows: [{ id: roteiroId }] };
+        if (text.includes('update atendimento.agentes set roteiro_id')) return { rows: [{ id: agenteId, roteiro_id: roteiroId }] };
+        return { rows: [] };
+      },
+    };
+    const db = { withTenant: async (tenant: string, operation: (value: typeof client) => Promise<unknown>) => { assert.equal(tenant, empresaId); return operation(client); } };
+    const service = new AppService(db as never, {} as never, {} as never);
+
+    const result = await service.assignAgentScript(empresaId, agenteId, roteiroId);
+
+    assert.equal(result.roteiro_id, roteiroId);
+    assert.equal(queries[0].values[1], empresaId);
+    assert.equal(queries[1].values[1], empresaId);
+  });
+
   it('tipa o canal da fila para persistir uma decisão do agente', async () => {
     const queries: string[] = [];
     const client = {

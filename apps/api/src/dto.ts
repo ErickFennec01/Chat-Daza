@@ -40,6 +40,11 @@ export class UpsertScriptDto {
   @IsOptional() @IsBoolean() ativo?: boolean;
 }
 
+export class AssignAgentScriptDto {
+  @ValidateIf((input) => input.roteiroId !== null)
+  @IsOptional() @IsUUID() roteiroId?: string | null;
+}
+
 export class CreateDocumentoDto {
   @IsString() @Length(2, 240) titulo!: string;
   @IsString() @Length(1, 200_000) conteudo!: string;

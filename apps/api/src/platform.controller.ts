@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, Logger, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
-import { AgentDecisionDto, CloseConversationDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, SendHumanMessageDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto, UpsertScriptDto } from './dto';
+import { AgentDecisionDto, AssignAgentScriptDto, CloseConversationDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, SendHumanMessageDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto, UpsertScriptDto } from './dto';
 import { AppService } from './platform.service';
 import { requireAdminKey, requireInternalKey, requirePanelAdmin, TenantGuard, TenantRequest } from './tenant.guard';
 import { AuthService } from './auth.service';
@@ -66,6 +66,13 @@ export class AppController {
   updateAgent(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: UpsertAgentDto) {
     requirePanelAdmin(request);
     return this.service.upsertAgent(request.empresaId!, { ...input, id });
+  }
+
+  @UseGuards(TenantGuard)
+  @Patch('agentes/:id/roteiro')
+  assignAgentScript(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: AssignAgentScriptDto) {
+    requirePanelAdmin(request);
+    return this.service.assignAgentScript(request.empresaId!, id, input.roteiroId ?? null);
   }
 
   @UseGuards(TenantGuard)

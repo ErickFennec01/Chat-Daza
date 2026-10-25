@@ -14,6 +14,8 @@ empresa no n8n.
 - A configuração do agente é retornada por uma função `SECURITY DEFINER`,
   sempre filtrada por `empresa_id`, `agente_id` e agente ativo.
 - O SQL do n8n não acessa mais a tabela `agentes` diretamente.
+- A memória, que retorna uma tabela, é consumida por `LEFT JOIN LATERAL` e
+  serializada no contrato esperado pelo nó de preparação do prompt.
 - Nenhuma credencial ou privilégio de tabela adicional é concedido ao n8n.
 
 ## Aceite

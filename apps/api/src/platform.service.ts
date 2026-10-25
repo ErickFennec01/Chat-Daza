@@ -273,7 +273,7 @@ export class AppService {
       const channel = await this.resolveOutgoingChannel(client, decision.empresaId, conversation.rows[0].canal, conversation.rows[0].canal_id);
       const queued = await client.query<{ id: string }>(
         `insert into atendimento.entregas_mensagens (empresa_id, conversa_id, mensagem_id, canal_whatsapp_id, provedor, status, erro_codigo)
-         values ($1, $2, $3, $4, $5, case when $4 is null then 'falha' else 'pendente' end, case when $4 is null then 'CANAL_NAO_CONFIGURADO' else null end)
+         values ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::text, case when $4::uuid is null then 'falha' else 'pendente' end, case when $4::uuid is null then 'CANAL_NAO_CONFIGURADO' else null end)
          returning id`,
         [decision.empresaId, decision.conversaId, message.rows[0].mensagem_id, channel?.id ?? null, channel?.provedor ?? 'waha'],
       );

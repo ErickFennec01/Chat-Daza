@@ -146,6 +146,30 @@ describe('AppService canais WAHA', () => {
     assert.equal(queries[1].values[4], '77777777-7777-4777-8777-777777777777');
   });
 
+  it('reprocessa somente uma entrega falha do tenant e grava auditoria', async () => {
+    const queries: Array<{ text: string; values: unknown[] }> = [];
+    const entregaId = '55555555-5555-4555-8555-555555555555';
+    const conversaId = '66666666-6666-4666-8666-666666666666';
+    const client = {
+      query: async (text: string, values: unknown[] = []) => {
+        queries.push({ text, values });
+        if (text.includes("set status='pendente'")) return { rows: [{ id: entregaId, conversa_id: conversaId }] };
+        if (text.includes("set status='processando'")) return { rows: [{ id: entregaId, canal_whatsapp_id: '44444444-4444-4444-8444-444444444444', conteudo: 'Resposta segura', contato_externo: '10000000000@c.us' }] };
+        if (text.includes('select sessao_waha')) return { rows: [{ sessao_waha: 'sessao-sintetica' }] };
+        return { rows: [] };
+      },
+    };
+    const db = { withTenant: async (_tenant: string, operation: (value: typeof client) => Promise<unknown>) => operation(client) };
+    const waha = { sendText: async () => 'provedor-sintetico' };
+    const service = new AppService(db as never, {} as never, waha as never);
+
+    const result = await service.retryDelivery(empresaId, entregaId, '77777777-7777-4777-8777-777777777777');
+
+    assert.equal(result.statusEntrega, 'enviada');
+    assert.equal(queries[0].values[0], entregaId);
+    assert.equal(queries.some((query) => query.text.includes('registrar_auditoria_atendimento')), true);
+  });
+
   it('simula o agente sem criar conversa ou entrega de WhatsApp', async () => {
     const queries: string[] = [];
     const client = {

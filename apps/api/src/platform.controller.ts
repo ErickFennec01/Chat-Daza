@@ -221,6 +221,20 @@ export class AppController {
   metrics(@Req() request: TenantRequest) { return this.service.metrics(request.empresaId!); }
 
   @UseGuards(TenantGuard)
+  @Get('operacao/entregas-falhas')
+  listFailedDeliveries(@Req() request: TenantRequest) {
+    requirePanelAdmin(request);
+    return this.service.listFailedDeliveries(request.empresaId!);
+  }
+
+  @UseGuards(TenantGuard)
+  @Post('operacao/entregas/:id/reprocessar')
+  retryDelivery(@Req() request: TenantRequest, @Param('id') id: string) {
+    requirePanelAdmin(request);
+    return this.service.retryDelivery(request.empresaId!, id, request.session!.usuarioId);
+  }
+
+  @UseGuards(TenantGuard)
   @Get('canais/whatsapp')
   listWhatsAppChannels(@Req() request: TenantRequest) { return this.service.listWhatsAppChannels(request.empresaId!); }
 

@@ -420,6 +420,42 @@ export class AppService {
     });
   }
 
+  async listFailedDeliveries(empresaId: string) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query(
+        `select e.id, e.conversa_id, e.provedor, e.status, e.tentativas, e.erro_codigo,
+                e.erro_detalhe, e.proxima_tentativa_em, e.created_at, e.updated_at,
+                c.contato_externo
+           from atendimento.entregas_mensagens e
+           join atendimento.conversas c on c.id=e.conversa_id and c.empresa_id=e.empresa_id
+          where e.empresa_id=$1 and e.status='falha'
+          order by e.updated_at desc limit 100`,
+        [empresaId],
+      );
+      return result.rows;
+    });
+  }
+
+  async retryDelivery(empresaId: string, deliveryId: string, usuarioId: string) {
+    const claimed = await this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query<{ id: string; conversa_id: string }>(
+        `update atendimento.entregas_mensagens
+            set status='pendente', proxima_tentativa_em=null, erro_codigo=null, erro_detalhe=null
+          where id=$1 and empresa_id=$2 and status='falha' and tentativas < 5
+          returning id, conversa_id`,
+        [deliveryId, empresaId],
+      );
+      if (!result.rows[0]) throw new BadRequestException('Entrega não está disponível para reprocessamento');
+      await client.query(
+        "select atendimento.registrar_auditoria_atendimento($1::uuid, $2::uuid, $3::uuid, 'usuario', 'entrega_reprocessada', jsonb_build_object('entrega_id', $4::uuid))",
+        [empresaId, result.rows[0].conversa_id, usuarioId, deliveryId],
+      );
+      return result.rows[0];
+    });
+    const statusEntrega = await this.deliverWhatsAppMessage(empresaId, claimed.id);
+    return { entregaId: claimed.id, statusEntrega };
+  }
+
   async resolveUnknownQuestion(empresaId: string, id: string, input: ResolveQuestionDto) {
     return this.db.withTenant(empresaId, async (client) => {
       const result = await client.query(

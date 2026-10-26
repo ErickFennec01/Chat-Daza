@@ -50,6 +50,9 @@ Executar em um canal de teste, com um contato autorizado:
 - As fixtures válida e inválida passam; a duplicidade permanece documentada
   como verificação durável do PostgreSQL entre execuções.
 - A API responde `status: ok` localmente.
+- O teste transacional `scripts/testar-nova-conversa.sql` confirma que um
+  inbound posterior ao encerramento cria outro `conversa_id` sem mensagens
+  anteriores; ele sempre executa `rollback`.
 - Os sete passos manuais possuem evidência registrada antes de ativar um novo
   canal de cliente.
 

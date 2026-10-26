@@ -91,6 +91,11 @@ export class CloseConversationDto {
   @IsOptional() @IsString() @Length(1, 2000) resumoFinal?: string;
 }
 
+export class TransferConversationDto {
+  @IsUUID() filaId!: string;
+  @IsOptional() @IsString() @Length(1, 1000) motivo?: string;
+}
+
 export class UpdateOperationPolicyDto {
   @IsOptional() @Type(() => Number) @Min(0) @Max(43200) janelaReaberturaMinutos?: number;
   @IsOptional() @Type(() => Number) @Min(1) @Max(10080) slaPrimeiraRespostaMinutos?: number;

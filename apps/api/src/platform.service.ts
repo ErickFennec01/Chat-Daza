@@ -253,6 +253,10 @@ export class AppService {
     return this.withTenantRows(empresaId, 'select id, nome, descricao, prioridade_padrao, sla_primeira_resposta_minutos, ativo, updated_at from atendimento.filas_atendimento order by ativo desc, nome');
   }
 
+  async listTransferQueues(empresaId: string) {
+    return this.withTenantRows(empresaId, 'select id, nome, descricao, prioridade_padrao from atendimento.filas_atendimento where ativo order by prioridade_padrao, nome');
+  }
+
   async createQueue(empresaId: string, input: CreateQueueDto) {
     return this.db.withTenant(empresaId, async (client) => {
       const result = await client.query(
@@ -323,6 +327,28 @@ export class AppService {
         [conversationId, empresaId, usuarioId],
       );
       if (!result.rows[0]) throw new NotFoundException('Conversa não encontrada ou já finalizada');
+      return result.rows[0];
+    });
+  }
+
+  async transferConversation(empresaId: string, conversationId: string, queueId: string, usuarioId: string, isAdmin: boolean, reason?: string) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const queue = await client.query('select id, nome from atendimento.filas_atendimento where id=$1 and empresa_id=$2 and ativo', [queueId, empresaId]);
+      if (!queue.rows[0]) throw new NotFoundException('Fila ativa não encontrada para a empresa');
+      const result = await client.query(
+        `update atendimento.conversas
+            set fila_atendimento_id=$3, atendida_por_usuario_id=null, assumida_em=null,
+                status='aguardando_humano', transferida_em=now(), motivo_transferencia=$6, updated_at=now()
+          where id=$1 and empresa_id=$2 and status in ('aberta', 'aguardando_humano')
+            and ($4::boolean or atendida_por_usuario_id is null or atendida_por_usuario_id=$5)
+          returning id, status, fila_atendimento_id, transferida_em, motivo_transferencia`,
+        [conversationId, empresaId, queueId, isAdmin, usuarioId, reason?.trim() || null],
+      );
+      if (!result.rows[0]) throw new NotFoundException('Conversa não encontrada, finalizada ou atribuída a outro atendente');
+      await client.query(
+        "select atendimento.registrar_auditoria_atendimento($1::uuid, $2::uuid, $3::uuid, 'usuario', 'conversa_transferida', jsonb_build_object('fila_id', $4::uuid, 'motivo', $5::text))",
+        [empresaId, conversationId, usuarioId, queueId, reason?.trim() || null],
+      );
       return result.rows[0];
     });
   }

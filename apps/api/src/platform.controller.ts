@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, Logger, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
-import { AgentDecisionDto, AssignAgentScriptDto, CloseConversationDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, SendHumanMessageDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto, UpsertScriptDto } from './dto';
+import { AgentDecisionDto, AssignAgentScriptDto, CloseConversationDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, SendHumanMessageDto, TransferConversationDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto, UpsertScriptDto } from './dto';
 import { AppService } from './platform.service';
 import { requireAdminKey, requireInternalKey, requirePanelAdmin, TenantGuard, TenantRequest } from './tenant.guard';
 import { AuthService } from './auth.service';
@@ -137,6 +137,10 @@ export class AppController {
   }
 
   @UseGuards(TenantGuard)
+  @Get('conversas/filas-disponiveis')
+  listTransferQueues(@Req() request: TenantRequest) { return this.service.listTransferQueues(request.empresaId!); }
+
+  @UseGuards(TenantGuard)
   @Get('conversas/:id')
   getConversation(@Req() request: TenantRequest, @Param('id') id: string) {
     return this.service.getConversation(request.empresaId!, id);
@@ -147,6 +151,13 @@ export class AppController {
   assumeConversation(@Req() request: TenantRequest, @Param('id') id: string) {
     if (!request.session) throw new UnauthorizedException('Ação disponível apenas para usuários do painel');
     return this.service.assumeConversation(request.empresaId!, id, request.session.usuarioId);
+  }
+
+  @UseGuards(TenantGuard)
+  @Post('conversas/:id/transferir')
+  transferConversation(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: TransferConversationDto) {
+    if (!request.session) throw new UnauthorizedException('Ação disponível apenas para usuários do painel');
+    return this.service.transferConversation(request.empresaId!, id, input.filaId, request.session.usuarioId, request.session.papel === 'admin', input.motivo);
   }
 
   @UseGuards(TenantGuard)

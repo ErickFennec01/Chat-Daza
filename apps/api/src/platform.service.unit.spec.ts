@@ -124,4 +124,25 @@ describe('AppService canais WAHA', () => {
     assert.equal(queries[0].values[3], '77777777-7777-4777-8777-777777777777');
     assert.equal(queries.some((query) => query.text.includes("'encerrada'")), true);
   });
+
+  it('transfere para fila do tenant e grava auditoria na mesma transação', async () => {
+    const queries: Array<{ text: string; values: unknown[] }> = [];
+    const queueId = '88888888-8888-4888-8888-888888888888';
+    const client = {
+      query: async (text: string, values: unknown[] = []) => {
+        queries.push({ text, values });
+        if (text.includes('from atendimento.filas_atendimento')) return { rows: [{ id: queueId, nome: 'Suporte' }] };
+        if (text.includes('update atendimento.conversas')) return { rows: [{ id: '66666666-6666-4666-8666-666666666666', status: 'aguardando_humano', fila_atendimento_id: queueId }] };
+        return { rows: [] };
+      },
+    };
+    const db = { withTenant: async (_tenant: string, operation: (value: typeof client) => Promise<unknown>) => operation(client) };
+    const service = new AppService(db as never, {} as never, {} as never);
+
+    const result = await service.transferConversation(empresaId, '66666666-6666-4666-8666-666666666666', queueId, '77777777-7777-4777-8777-777777777777', false, 'Especialidade necessária');
+
+    assert.equal(result.fila_atendimento_id, queueId);
+    assert.equal(queries.some((query) => query.text.includes('registrar_auditoria_atendimento')), true);
+    assert.equal(queries[1].values[4], '77777777-7777-4777-8777-777777777777');
+  });
 });

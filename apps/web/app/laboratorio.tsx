@@ -17,7 +17,10 @@ export function Laboratorio() {
   const [agentId, setAgentId] = useState(''); const [title, setTitle] = useState('Teste de agente'); const [message, setMessage] = useState(''); const [feedback, setFeedback] = useState(''); const [busy, setBusy] = useState(false);
   const load = async () => {
     const nextAgents = await api('agentes');
-    setAgents(nextAgents.filter((agent: Agent) => agent.ativo));
+    const activeAgents = nextAgents.filter((agent: Agent) => agent.ativo);
+    setAgents(activeAgents);
+    setAgentId((currentAgentId) => activeAgents.some((agent: Agent) => agent.id === currentAgentId) ? currentAgentId : (activeAgents[0]?.id ?? ''));
+    if (activeAgents.length === 0) setFeedback('Nenhum agente ativo está disponível. Cadastre ou ative um agente antes de iniciar uma simulação.');
     try { setSimulations(await api('laboratorio/simulacoes')); }
     catch (error) { setSimulations([]); setFeedback(error instanceof Error ? error.message : 'Não foi possível carregar simulações anteriores.'); }
   };

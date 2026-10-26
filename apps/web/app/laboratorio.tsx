@@ -15,7 +15,12 @@ async function api(path: string, init?: RequestInit) {
 export function Laboratorio() {
   const [agents, setAgents] = useState<Agent[]>([]); const [simulations, setSimulations] = useState<Simulation[]>([]); const [selected, setSelected] = useState<Detail | null>(null);
   const [agentId, setAgentId] = useState(''); const [title, setTitle] = useState('Teste de agente'); const [message, setMessage] = useState(''); const [feedback, setFeedback] = useState(''); const [busy, setBusy] = useState(false);
-  const load = async () => { const [nextAgents, nextSimulations] = await Promise.all([api('agentes'), api('laboratorio/simulacoes')]); setAgents(nextAgents.filter((agent: Agent) => agent.ativo)); setSimulations(nextSimulations); };
+  const load = async () => {
+    const nextAgents = await api('agentes');
+    setAgents(nextAgents.filter((agent: Agent) => agent.ativo));
+    try { setSimulations(await api('laboratorio/simulacoes')); }
+    catch (error) { setSimulations([]); setFeedback(error instanceof Error ? error.message : 'Não foi possível carregar simulações anteriores.'); }
+  };
   useEffect(() => { void load().catch((error) => setFeedback(error instanceof Error ? error.message : 'Não foi possível carregar o laboratório.')); }, []);
   async function open(id: string) { try { setSelected(await api(`laboratorio/simulacoes/${id}`)); } catch (error) { setFeedback(error instanceof Error ? error.message : 'Não foi possível abrir a simulação.'); } }
   async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setBusy(true); setFeedback(''); try { const created = await api('laboratorio/simulacoes', { method: 'POST', body: JSON.stringify({ agenteId: agentId, titulo: title }) }); await load(); await open(created.id); } catch (error) { setFeedback(error instanceof Error ? error.message : 'Não foi possível criar a simulação.'); } finally { setBusy(false); } }

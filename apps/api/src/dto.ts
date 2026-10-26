@@ -96,6 +96,15 @@ export class TransferConversationDto {
   @IsOptional() @IsString() @Length(1, 1000) motivo?: string;
 }
 
+export class CreateSimulationDto {
+  @IsUUID() agenteId!: string;
+  @IsOptional() @IsString() @Length(2, 160) titulo?: string;
+}
+
+export class SendSimulationMessageDto {
+  @IsString() @Length(1, 8000) conteudo!: string;
+}
+
 export class UpdateOperationPolicyDto {
   @IsOptional() @Type(() => Number) @Min(0) @Max(43200) janelaReaberturaMinutos?: number;
   @IsOptional() @Type(() => Number) @Min(1) @Max(10080) slaPrimeiraRespostaMinutos?: number;

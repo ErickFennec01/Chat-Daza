@@ -5,9 +5,10 @@ import { DatabaseService } from './database.service';
 import { TenantGuard } from './tenant.guard';
 import { AuthService } from './auth.service';
 import { WahaService } from './waha.service';
+import { OpenRouterService } from './openrouter.service';
 
 @Module({
   controllers: [AppController],
-  providers: [AppService, DatabaseService, AuthService, WahaService, TenantGuard],
+  providers: [AppService, DatabaseService, AuthService, WahaService, OpenRouterService, TenantGuard],
 })
 export class AppModule {}

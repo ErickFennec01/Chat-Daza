@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, Logger, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
-import { AgentDecisionDto, AssignAgentScriptDto, CloseConversationDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, SendHumanMessageDto, TransferConversationDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto, UpsertScriptDto } from './dto';
+import { AgentDecisionDto, AssignAgentScriptDto, CloseConversationDto, CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateSimulationDto, CreateUserDto, CreateWhatsAppChannelDto, ListConversationsQueryDto, LoginDto, ResolveQuestionDto, SendHumanMessageDto, SendSimulationMessageDto, TransferConversationDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto, UpsertScriptDto } from './dto';
 import { AppService } from './platform.service';
 import { requireAdminKey, requireInternalKey, requirePanelAdmin, TenantGuard, TenantRequest } from './tenant.guard';
 import { AuthService } from './auth.service';
@@ -53,6 +53,28 @@ export class AppController {
   @UseGuards(TenantGuard)
   @Get('agentes')
   listAgents(@Req() request: TenantRequest) { return this.service.listAgents(request.empresaId!); }
+
+  @UseGuards(TenantGuard)
+  @Get('laboratorio/simulacoes')
+  listSimulations(@Req() request: TenantRequest) { return this.service.listSimulations(request.empresaId!); }
+
+  @UseGuards(TenantGuard)
+  @Post('laboratorio/simulacoes')
+  createSimulation(@Req() request: TenantRequest, @Body() input: CreateSimulationDto) {
+    if (!request.session) throw new UnauthorizedException('Ação disponível apenas para usuários do painel');
+    return this.service.createSimulation(request.empresaId!, request.session.usuarioId, input);
+  }
+
+  @UseGuards(TenantGuard)
+  @Get('laboratorio/simulacoes/:id')
+  getSimulation(@Req() request: TenantRequest, @Param('id') id: string) { return this.service.getSimulation(request.empresaId!, id); }
+
+  @UseGuards(TenantGuard)
+  @Post('laboratorio/simulacoes/:id/mensagens')
+  sendSimulationMessage(@Req() request: TenantRequest, @Param('id') id: string, @Body() input: SendSimulationMessageDto) {
+    if (!request.session) throw new UnauthorizedException('Ação disponível apenas para usuários do painel');
+    return this.service.sendSimulationMessage(request.empresaId!, id, input.conteudo);
+  }
 
   @UseGuards(TenantGuard)
   @Post('agentes')

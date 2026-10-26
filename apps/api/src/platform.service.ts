@@ -1,11 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { createHmac, randomBytes } from 'node:crypto';
 import { PoolClient } from 'pg';
 import { DatabaseService } from './database.service';
-import { CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateUserDto, CreateWhatsAppChannelDto, ResolveQuestionDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto, UpsertScriptDto } from './dto';
+import { CreateApiKeyDto, CreateDocumentoDto, CreateEmpresaDto, CreateQueueDto, CreateSimulationDto, CreateUserDto, CreateWhatsAppChannelDto, ResolveQuestionDto, UpdateDocumentoDto, UpdateOperationPolicyDto, UpdateQueueDto, UpdateWhatsAppChannelDto, UpsertAgentDto, UpsertScriptDto } from './dto';
 import { AuthService } from './auth.service';
 import { ListConversationsQueryDto } from './dto';
 import { WahaService } from './waha.service';
+import { OpenRouterService } from './openrouter.service';
 
 function tokenHash(token: string): string {
   const pepper = process.env.TENANT_TOKEN_PEPPER;
@@ -15,7 +16,7 @@ function tokenHash(token: string): string {
 
 @Injectable()
 export class AppService {
-  constructor(private readonly db: DatabaseService, private readonly auth: AuthService, private readonly waha: WahaService) {}
+  constructor(private readonly db: DatabaseService, private readonly auth: AuthService, private readonly waha: WahaService, private readonly openRouter?: OpenRouterService) {}
 
   async health() {
     await this.db.query('select 1');
@@ -56,6 +57,56 @@ export class AppService {
 
   async listAgents(empresaId: string) {
     return this.withTenantRows(empresaId, 'select id, nome, ativo, system_prompt, modelo, temperatura, limite_resposta_tokens, limiar_confianca, versao_conhecimento, roteiro_id, updated_at from atendimento.agentes order by nome');
+  }
+
+  async listSimulations(empresaId: string) {
+    return this.withTenantRows(empresaId, `select s.id, s.agente_id, a.nome as agente_nome, s.titulo, s.status, s.created_at, s.updated_at,
+      (select count(*)::int from atendimento.simulacoes_mensagens m where m.simulacao_id=s.id and m.empresa_id=s.empresa_id) as mensagens
+      from atendimento.simulacoes_agente s join atendimento.agentes a on a.id=s.agente_id and a.empresa_id=s.empresa_id
+      order by s.updated_at desc limit 30`);
+  }
+
+  async createSimulation(empresaId: string, usuarioId: string, input: CreateSimulationDto) {
+    return this.db.withTenant(empresaId, async (client) => {
+      await this.ensureAgentBelongsToTenant(client, empresaId, input.agenteId);
+      const result = await client.query(
+        "insert into atendimento.simulacoes_agente (empresa_id, agente_id, criado_por_usuario_id, titulo) values ($1,$2,$3,$4) returning id, agente_id, titulo, status, created_at, updated_at",
+        [empresaId, input.agenteId, usuarioId, input.titulo?.trim() || 'Teste de agente'],
+      );
+      return result.rows[0];
+    });
+  }
+
+  async getSimulation(empresaId: string, simulationId: string) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const simulation = await client.query('select s.id, s.agente_id, a.nome as agente_nome, s.titulo, s.status, s.created_at, s.updated_at from atendimento.simulacoes_agente s join atendimento.agentes a on a.id=s.agente_id and a.empresa_id=s.empresa_id where s.id=$1 and s.empresa_id=$2', [simulationId, empresaId]);
+      if (!simulation.rows[0]) throw new NotFoundException('Simulação não encontrada');
+      const messages = await client.query('select id, papel, conteudo, modelo, rag_contexto, created_at from atendimento.simulacoes_mensagens where simulacao_id=$1 and empresa_id=$2 order by created_at, id', [simulationId, empresaId]);
+      return { ...simulation.rows[0], mensagens: messages.rows };
+    });
+  }
+
+  async sendSimulationMessage(empresaId: string, simulationId: string, content: string) {
+    if (!this.openRouter) throw new ServiceUnavailableException('Simulação de modelo indisponível');
+    const input = content.trim();
+    if (!input) throw new BadRequestException('A mensagem de teste não pode ficar vazia');
+    const context = await this.db.withTenant(empresaId, async (client) => {
+      const simulation = await client.query<{ agente_id: string; status: string }>('select agente_id, status from atendimento.simulacoes_agente where id=$1 and empresa_id=$2', [simulationId, empresaId]);
+      if (!simulation.rows[0] || simulation.rows[0].status !== 'ativa') throw new NotFoundException('Simulação ativa não encontrada');
+      const agent = await client.query<{ agente: { modelo: string; system_prompt: string; temperatura: number; limite_resposta_tokens: number } }>('select atendimento.obter_contexto_agente($1::uuid, $2::uuid) as agente', [empresaId, simulation.rows[0].agente_id]);
+      if (!agent.rows[0]?.agente) throw new NotFoundException('Agente ativo não encontrado');
+      const history = await client.query<{ papel: string; conteudo: string }>('select papel, conteudo from atendimento.simulacoes_mensagens where simulacao_id=$1 and empresa_id=$2 order by created_at desc, id desc limit 12', [simulationId, empresaId]);
+      const rag = await client.query<{ contexto: string }>('select atendimento.buscar_conhecimento_rag($1::uuid, $2::text) as contexto', [empresaId, input]);
+      return { agent: agent.rows[0].agente, history: history.rows.reverse(), rag: rag.rows[0]?.contexto ?? '' };
+    });
+    const system = `${context.agent.system_prompt}\n\nMODO LABORATÓRIO: esta é uma simulação; não prometa execução externa.\n\nCONTEXTO RAG:\n${context.rag || '(nenhum contexto confiável encontrado)'}`;
+    const reply = await this.openRouter.chat({ model: context.agent.modelo, temperature: Number(context.agent.temperatura ?? 0.2), maxTokens: Number(context.agent.limite_resposta_tokens ?? 450), messages: [{ role: 'system', content: system }, ...context.history.map((item) => ({ role: item.papel === 'assistente' ? 'assistant' as const : 'user' as const, content: item.conteudo })), { role: 'user', content: input }] });
+    return this.db.withTenant(empresaId, async (client) => {
+      await client.query('insert into atendimento.simulacoes_mensagens (simulacao_id, empresa_id, papel, conteudo) values ($1,$2,$3,$4)', [simulationId, empresaId, 'usuario', input]);
+      const saved = await client.query('insert into atendimento.simulacoes_mensagens (simulacao_id, empresa_id, papel, conteudo, modelo, rag_contexto) values ($1,$2,$3,$4,$5,$6) returning id, papel, conteudo, modelo, rag_contexto, created_at', [simulationId, empresaId, 'assistente', reply, context.agent.modelo, context.rag || null]);
+      await client.query('update atendimento.simulacoes_agente set updated_at=now() where id=$1 and empresa_id=$2', [simulationId, empresaId]);
+      return saved.rows[0];
+    });
   }
 
   async upsertAgent(empresaId: string, input: UpsertAgentDto) {

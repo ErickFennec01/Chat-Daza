@@ -145,4 +145,27 @@ describe('AppService canais WAHA', () => {
     assert.equal(queries.some((query) => query.text.includes('registrar_auditoria_atendimento')), true);
     assert.equal(queries[1].values[4], '77777777-7777-4777-8777-777777777777');
   });
+
+  it('simula o agente sem criar conversa ou entrega de WhatsApp', async () => {
+    const queries: string[] = [];
+    const client = {
+      query: async (text: string) => {
+        queries.push(text);
+        if (text.includes('from atendimento.simulacoes_agente where')) return { rows: [{ agente_id: agenteId, status: 'ativa' }] };
+        if (text.includes('obter_contexto_agente')) return { rows: [{ agente: { modelo: 'modelo/sintetico', system_prompt: 'Prompt isolado', temperatura: 0.2, limite_resposta_tokens: 200 } }] };
+        if (text.includes('buscar_conhecimento_rag')) return { rows: [{ contexto: 'Conhecimento sintético' }] };
+        if (text.includes('papel, conteudo from atendimento.simulacoes_mensagens')) return { rows: [] };
+        if (text.includes("papel, conteudo, modelo, rag_contexto")) return { rows: [{ id: '99999999-9999-4999-8999-999999999999', papel: 'assistente', conteudo: 'Resposta isolada' }] };
+        return { rows: [] };
+      },
+    };
+    const db = { withTenant: async (_tenant: string, operation: (value: typeof client) => Promise<unknown>) => operation(client) };
+    const model = { chat: async () => 'Resposta isolada' };
+    const service = new AppService(db as never, {} as never, {} as never, model as never);
+
+    const result = await service.sendSimulationMessage(empresaId, '66666666-6666-4666-8666-666666666666', 'Teste seguro');
+
+    assert.equal(result.conteudo, 'Resposta isolada');
+    assert.equal(queries.some((query) => query.includes('atendimento.conversas') || query.includes('entregas_mensagens')), false);
+  });
 });

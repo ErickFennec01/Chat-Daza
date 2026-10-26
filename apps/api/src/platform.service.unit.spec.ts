@@ -170,6 +170,17 @@ describe('AppService canais WAHA', () => {
     assert.equal(queries.some((query) => query.text.includes('registrar_auditoria_atendimento')), true);
   });
 
+  it('não reprocessa entrega enviada, de outra empresa ou acima do limite', async () => {
+    const client = { query: async () => ({ rows: [] }) };
+    const db = { withTenant: async (_tenant: string, operation: (value: typeof client) => Promise<unknown>) => operation(client) };
+    const service = new AppService(db as never, {} as never, {} as never);
+
+    await assert.rejects(
+      () => service.retryDelivery(empresaId, '55555555-5555-4555-8555-555555555555', '77777777-7777-4777-8777-777777777777'),
+      { message: 'Entrega não está disponível para reprocessamento' },
+    );
+  });
+
   it('simula o agente sem criar conversa ou entrega de WhatsApp', async () => {
     const queries: string[] = [];
     const client = {

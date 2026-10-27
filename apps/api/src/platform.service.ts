@@ -436,6 +436,37 @@ export class AppService {
     });
   }
 
+  async listQueueSla(empresaId: string) {
+    return this.db.withTenant(empresaId, async (client) => {
+      const result = await client.query(
+        `with fila as (
+           select c.id, c.contato_externo, c.fila_atendimento_id, c.prioridade,
+                  c.atendida_por_usuario_id, coalesce(c.transferida_em, c.created_at) as inicio_fila,
+                  f.nome as fila_nome,
+                  coalesce(f.sla_primeira_resposta_minutos, p.sla_primeira_resposta_minutos) as sla_minutos
+             from atendimento.conversas c
+             left join atendimento.filas_atendimento f on f.id=c.fila_atendimento_id and f.empresa_id=c.empresa_id
+             join atendimento.politicas_atendimento p on p.empresa_id=c.empresa_id
+            where c.empresa_id=$1 and c.status='aguardando_humano'
+         )
+         select id, contato_externo, fila_atendimento_id, coalesce(fila_nome, 'Sem fila') as fila_nome,
+                prioridade, atendida_por_usuario_id, inicio_fila, sla_minutos,
+                inicio_fila + make_interval(mins => sla_minutos) as prazo_sla,
+                greatest(0, floor(extract(epoch from ((inicio_fila + make_interval(mins => sla_minutos)) - now())) / 60))::int as minutos_restantes,
+                case when now() > inicio_fila + make_interval(mins => sla_minutos) then 'atrasado'
+                     when now() >= inicio_fila + make_interval(mins => greatest(sla_minutos - 5, 0)) then 'em_risco'
+                     else 'no_prazo' end as situacao_sla
+           from fila
+          order by case when now() > inicio_fila + make_interval(mins => sla_minutos) then 0
+                        when now() >= inicio_fila + make_interval(mins => greatest(sla_minutos - 5, 0)) then 1 else 2 end,
+                   prioridade asc, inicio_fila asc
+          limit 100`,
+        [empresaId],
+      );
+      return result.rows;
+    });
+  }
+
   async retryDelivery(empresaId: string, deliveryId: string, usuarioId: string) {
     const claimed = await this.db.withTenant(empresaId, async (client) => {
       const result = await client.query<{ id: string; conversa_id: string }>(

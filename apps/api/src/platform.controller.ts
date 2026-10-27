@@ -228,6 +228,13 @@ export class AppController {
   }
 
   @UseGuards(TenantGuard)
+  @Get('operacao/fila-sla')
+  listQueueSla(@Req() request: TenantRequest) {
+    requirePanelAdmin(request);
+    return this.service.listQueueSla(request.empresaId!);
+  }
+
+  @UseGuards(TenantGuard)
   @Post('operacao/entregas/:id/reprocessar')
   retryDelivery(@Req() request: TenantRequest, @Param('id') id: string) {
     requirePanelAdmin(request);

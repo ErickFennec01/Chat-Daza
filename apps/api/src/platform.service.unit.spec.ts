@@ -181,6 +181,19 @@ describe('AppService canais WAHA', () => {
     );
   });
 
+  it('consulta a fila de SLA somente no tenant autenticado', async () => {
+    const queries: Array<{ text: string; values: unknown[] }> = [];
+    const client = { query: async (text: string, values: unknown[] = []) => { queries.push({ text, values }); return { rows: [{ situacao_sla: 'em_risco' }] }; } };
+    const db = { withTenant: async (tenant: string, operation: (value: typeof client) => Promise<unknown>) => { assert.equal(tenant, empresaId); return operation(client); } };
+    const service = new AppService(db as never, {} as never, {} as never);
+
+    const result = await service.listQueueSla(empresaId);
+
+    assert.equal(result[0].situacao_sla, 'em_risco');
+    assert.equal(queries[0].values[0], empresaId);
+    assert.match(queries[0].text, /c\.status='aguardando_humano'/);
+  });
+
   it('simula o agente sem criar conversa ou entrega de WhatsApp', async () => {
     const queries: string[] = [];
     const client = {
